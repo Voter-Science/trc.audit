@@ -1,10 +1,10 @@
 ﻿{
     // ID must be unique on the gallery
-    "Id": "PluginTemplate",
+    "Id": "Audit",
     "Name": "An empty plugin",
     "Author" :  "Voter-Science",
     "Website" :  "https://github.com/Voter-Science/TRC-API-Samples",
-    "Description": "An empty plugin that just gets the initial login and shows basic sheet properties.",        
+    "Description": "Explore the changelists and audit results.",        
     "Version": "1.0.0", // User SemVer
-    "Tags": [ "demo"  ]
+    "Tags": [ "report"  ]
 }
