@@ -76,40 +76,58 @@ export class MyPlugin {
 
 
             var a = new analyze.AnalyzeClient(this._sheet);
-            a.setProgressCallback((msg: string) => 
+            a.setProgressCallback((msg: string) =>
                 $("#status").text(msg)
             );
             this._analyze = a;
 
             // this will force a cache 
-            return a.getAllChangesAsync().then ( changelist => {
-                this._ctx = new _mode.Context();
+            return a.getAllChangesAsync().then(changelist => {
+                this._ctx = new _mode.RenderContext();
                 this._ctx.changelist = changelist;
                 var e = $("#contents");
                 this._ctx.element = e;
 
-                window.onhashchange = (ev  :HashChangeEvent) => {
-                    // this.UpdateHash();
-                    var hash = window.location.hash; // Escaped value, starts with '#'
-                    var x = decodeURIComponent(hash.substr(1));
-                    alert("Update:" + x);
+                window.onhashchange = (ev: HashChangeEvent) => {
+                    this.showCurrentHash();
                 };
-                
-                var mode = new _mode.ShowDeltaRange(changelist);
-                this.show(mode)
 
-            } );
+                //var mode = new _mode.ShowDeltaRange(changelist);
+                //this.show(mode)
+                window.location.hash = "show=sessions";
+                this.showCurrentHash();
+            });
         });
     }
 
-    private show(mode : _mode.Mode) {
+    // Called by onhashchange
+    // This does _not_ set hash, since that would retrigger the onhashchange and cause a loop.
+    private showCurrentHash() {
+        var hash = window.location.hash; // Escaped value, starts with '#'
+        var x = decodeURIComponent(hash.substr(1));
+        
+        // alert("Update:" + x);
 
+        _mode.Mode.parse(x, this._analyze).then(m => {
+            this.showInternal(m);
+        }).catch(showError);
+    }
+
+    
+    private show(mode: _mode.Mode) {
         // https://gist.github.com/LoonyPandora/5157532
 
         // Setting the hash will also cooperate with forward and backward buttons 
         // https://blog.httpwatch.com/2011/03/01/6-things-you-should-know-about-fragment-urls/
-        // This will trigger the onhashchange event
+        
+        // This will trigger the onhashchange event, although it may fire deferred 
         window.location.hash = mode.toHash();
+
+        // this.showInternal(mode);
+    }
+
+    private showInternal(mode: _mode.Mode) {
+
 
         // Parse the msg
         // var m =_mode.Mode.parse("");
@@ -120,6 +138,6 @@ export class MyPlugin {
         mode.render(this._ctx);
     }
 
-    private _ctx : _mode.Context;
+    private _ctx: _mode.RenderContext;
     private _analyze: analyze.AnalyzeClient;
 }
