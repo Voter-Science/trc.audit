@@ -93,8 +93,7 @@ export class MyPlugin {
                 };
 
                 //var mode = new _mode.ShowDeltaRange(changelist);
-                //this.show(mode)
-                window.location.hash = "show=sessions";
+                //this.show(mode)                
                 this.showCurrentHash();
             });
         });
@@ -104,22 +103,33 @@ export class MyPlugin {
     // This does _not_ set hash, since that would retrigger the onhashchange and cause a loop.
     private showCurrentHash() {
         var hash = window.location.hash; // Escaped value, starts with '#'
+        if (!hash || hash.length < 2) 
+        {
+            // Blank .. set to something.
+            // This will trigger an on-change event. 
+            window.location.hash = "show=sessions";
+            return;
+        }
         var x = decodeURIComponent(hash.substr(1));
-        
+
         // alert("Update:" + x);
 
-        _mode.Mode.parse(x, this._analyze).then(m => {
+        try {
+            var m = _mode.Mode.parse(x);
             this.showInternal(m);
-        }).catch(showError);
+        }
+        catch (e) {
+            showError(e);
+        }
     }
 
-    
+
     private show(mode: _mode.Mode) {
         // https://gist.github.com/LoonyPandora/5157532
 
         // Setting the hash will also cooperate with forward and backward buttons 
         // https://blog.httpwatch.com/2011/03/01/6-things-you-should-know-about-fragment-urls/
-        
+
         // This will trigger the onhashchange event, although it may fire deferred 
         window.location.hash = mode.toHash();
 

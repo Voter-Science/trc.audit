@@ -61,6 +61,7 @@ function addNormalizedDay(x: ISheetContents, columnName: string, newColumnName: 
 // Context passed to rendering 
 export class RenderContext {
     public changelist: analyze.Changelist;
+
     public element: JQuery<HTMLElement>;
 
     // used by click handlers 
@@ -78,48 +79,28 @@ function clickable(ctx: RenderContext, text: string, next: () => Mode): JQuery<H
 
 // All modes are totally serializable. 
 export abstract class Mode {
-    static parse1(value: string): any {
-        value = value.toLowerCase();
-        // parse 
-        var obj: any = {};
-        var pairs = value.split(';')
-        for (var i in pairs) {
-            var pair = pairs[i];
-            var halves = pair.split('=');
-            var key = halves[0];
-            var val = halves[1];
-            obj[key] = val;
+    static parse(value: string): Mode {
+
+        // Could be lots of parser errors
+        var obj = bcl.KeyParser.parse(value);
+
+        var clf = analyze.ChangelistFilter.parse(value);
+
+        var kind = obj["show"];
+        if (kind == "delta") {
+            var ver = parseInt(obj["ver"]);
+            return new ShowDelta(ver);
         }
-        return obj;
-    }
-    static parse(value: string, analyzeClient: analyze.AnalyzeClient): Promise<Mode> {
-        return new Promise<Mode>(
-            (
-                resolve: (result: Mode) => void,
-                reject: (error: any) => void
-            ) => {
-                // Could be lots of parser errors
-                var obj = Mode.parse1(value);
+        if (kind == "deltarange") {
+            // var ver = parseInt(obj["ver"]);                    
+            return new ShowDeltaRange(clf);
 
-                var kind = obj["show"];
-                if (kind == "delta") {
-                    var ver = parseInt(obj["ver"]);
-                    return resolve(new ShowDelta(ver));
-                }
-                if (kind == "deltarange") {
-                    // var ver = parseInt(obj["ver"]);
-                    return analyzeClient.getAllChangesAsync().then((cl) => {
-                        return resolve(new ShowDeltaRange(cl));
-                    });
-                }// sessions
-                if (kind == "sessions") {
-                    return analyzeClient.getAllChangesAsync().then((cl) => {
-                        return resolve(new ShowSessionList (cl));
-                    });
-                }
+        }// sessions
+        if (kind == "sessions") {
+            return new ShowSessionList(clf);
+        }
+        throw ("Unidentified mode: " + kind);
 
-                reject("Unidentified mode: " + kind);
-            });
     }
 
     public abstract render(ctx: RenderContext): void;
@@ -151,6 +132,18 @@ export class ShowDelta extends Mode {
     }
 }
 
+// For setting in Table rows 
+class ClickableValue<T> {
+    public _next: () => Mode; // What happens when we click
+    public _value: T;
+    public constructor(value: T, next: () => Mode) {
+        this._value = value;
+        this._next = next;
+    }
+
+    public toString() { return this._value.toString(); };
+}
+
 interface ITableRow {
     // Properties aren't ordered. 
     getColumns(): string[];
@@ -159,7 +152,7 @@ interface ITableRow {
 class SessionRow {
     public User: string;
     public VoterCount: number;
-    public VerStart: number;
+    public VerStart: ClickableValue<number>;
     public VerEnd: number;
     public DayNumber: number;
     public Day: string;
@@ -180,17 +173,19 @@ class TableWriter<T> {
     private _table: JQuery<HTMLElement>;
     private _count: number;
     private _columns: string[];
+    private _ctx: RenderContext;
 
-    public constructor(root: JQuery<HTMLElement>) {
+    public constructor(root: JQuery<HTMLElement>, ctx: RenderContext) {
         this._root = root;
         this._count = 0;
+        this._ctx = ctx;
     }
 
     public writeRow(row: T): void {
         if (this._count == 0) {
             // Writer header 
 
-            this._table = $("<table>");
+            this._table = $("<table>").attr("border", 1);
             this._root.append(this._table);
 
             var tr = $("<tr>");
@@ -205,10 +200,22 @@ class TableWriter<T> {
         }
 
         var tr = $("<tr>");
-        
+
         this._columns.forEach(columnName => {
-            var val :any = (<any>row)[columnName];
-            var td = $("<td>").text(val);
+            var td = $("<td>");
+
+            var val: any = (<any>row)[columnName];
+
+            var next = val._next;
+            if (next) {
+                // clicabkle
+                td = td.append(
+                    clickable(this._ctx,
+                        val.toString(),
+                        next));
+            } else {
+                td.text(val);
+            }
             tr.append(td);
         });
         this._table.append(tr);
@@ -224,23 +231,25 @@ class TableWriter<T> {
 // Click on VoterCount --> Which recids? 
 // Click on househodls --> Which households?
 export class ShowSessionList extends Mode {
-    private _cl: analyze.Changelist; // already has filter applied!
+    private _clf: analyze.ChangelistFilter; // already has filter applied!
 
-    public constructor(changelist: analyze.Changelist) {
+    public constructor(clf: analyze.ChangelistFilter) {
         super();
-        this._cl = changelist;
+        this._clf = clf;
     }
 
     public toHash(): string {
-        // $$$
-        // return "ver_range=" + this._cl.toString();
-        return "show=sessions";
+        return "show=sessions;" + this._clf.toString();
     }
 
     public render(ctx: RenderContext): void {
-        var users = this._cl.filterByUser();
+        var cl = ctx.changelist;
+        
+        var cl = cl.applyFilter(this._clf);
 
-        var table = new TableWriter<SessionRow>(ctx.element);
+        var users = cl.filterByUser();
+
+        var table = new TableWriter<SessionRow>(ctx.element, ctx);
 
 
         users.forEach((user, cl) => {
@@ -250,8 +259,21 @@ export class ShowSessionList extends Mode {
                 var row = new SessionRow();
                 row.User = user;
                 row.VoterCount = cluster.getUniqueCount();
-                row.VerStart = cluster.getVersionRange().getStart();
-                row.VerEnd = cluster.getVersionRange().getEnd();
+
+                var verStart = cluster.getVersionRange().getStart();
+                var verEnd = cluster.getVersionRange().getEnd();
+                row.VerStart = new ClickableValue<number>(verStart,
+                    () => {
+                        // Clicking on version number takes us to that range. 
+                        var clf = new analyze.ChangelistFilter()
+                            .setUser(user)
+                            .setVersionRange(cluster.getVersionRange());
+                        return new ShowDeltaRange(clf);
+                    }
+                );
+            
+
+                row.VerEnd = verEnd;
 
                 var tr = cluster.getTimeRange();
                 var trStart = bcl.TimeRange.roundToDay(tr.getStart());
@@ -274,21 +296,22 @@ export class ShowSessionList extends Mode {
 // Clicks:
 //   - on ver# --> ShowDelta(version)
 export class ShowDeltaRange extends Mode {
-    private _cl: analyze.Changelist; // already has filter applied!
+    private _clf: analyze.ChangelistFilter; // already has filter applied!
 
-    public constructor(changelist: analyze.Changelist) {
+    public constructor(filter: analyze.ChangelistFilter) {
         super();
-        this._cl = changelist;
+        this._clf = filter;
     }
 
     public toHash(): string {
-        // $$$
-        // return "ver_range=" + this._cl.toString();
-        return "show=deltarange";
+        return "show=deltarange;" + this._clf.toString();
     }
 
 
     public render(ctx: RenderContext): void {
+
+        var cl = ctx.changelist;
+        cl = cl.applyFilter(this._clf);
 
         var e1 = $("<table>");
 
@@ -299,7 +322,7 @@ export class ShowDeltaRange extends Mode {
         tr.append(td1).append(td2).append(td3);
         e1.append(tr);
 
-        this._cl.forEach((delta: trcSheet.IDeltaInfo) => {
+        cl.forEach((delta: trcSheet.IDeltaInfo) => {
 
             var tr = $("<tr>");
             td1 = $("<td>").append(
