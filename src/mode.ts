@@ -99,9 +99,20 @@ export abstract class Mode {
         if (kind == "sessions") {
             return new ShowSessionList(clf);
         }
+
+        // Flatten by RecId, like Blame report. 
+        if (kind == "byrecid") {
+            return new ShowFlattenToRecId(clf);
+        }
+
+        if (kind == "daily") {
+            return new ShowDailyReport(clf);
+        }
         throw ("Unidentified mode: " + kind);
 
     }
+
+    public getDescription() : string { return ""; } 
 
     public abstract render(ctx: RenderContext): void;
 
@@ -130,6 +141,11 @@ export class ShowDelta extends Mode {
     public toHash(): string {
         return "show=delta;ver=" + this._ver;
     }
+
+    public getDescription() : string {
+        return "This is an advanced view. It shows an individual piece of information (a 'delta') uploaded by the mobile clients. " + 
+        "Each delta is given a unique version number, and may edit one of more RecIds."
+    }
 }
 
 // For setting in Table rows 
@@ -144,11 +160,6 @@ class ClickableValue<T> {
     public toString() { return this._value.toString(); };
 }
 
-interface ITableRow {
-    // Properties aren't ordered. 
-    getColumns(): string[];
-}
-
 class SessionRow {
     public User: string;
     public VoterCount: number;
@@ -160,12 +171,6 @@ class SessionRow {
     public EndTime: string;
     public TotalMinutes: number;
     public TotalDuration: string;
-
-    // public getColumns() : string[] {
-    // return ["User", "VoterCount", ]
-    //  return Object.getOwnPropertyNames(this);
-    //}
-
 }
 
 class TableWriter<T> {
@@ -175,22 +180,25 @@ class TableWriter<T> {
     private _columns: string[];
     private _ctx: RenderContext;
 
-    public constructor(root: JQuery<HTMLElement>, ctx: RenderContext) {
+    public constructor(root: JQuery<HTMLElement>, ctx: RenderContext, columnsNames?: string[]) {
         this._root = root;
         this._count = 0;
         this._ctx = ctx;
+        this._columns = columnsNames;
     }
 
     public writeRow(row: T): void {
         if (this._count == 0) {
             // Writer header 
 
-            this._table = $("<table>").attr("border", 1);
+            this._table = $("<table>").attr("border", '1');
             this._root.append(this._table);
 
             var tr = $("<tr>");
 
-            this._columns = Object.getOwnPropertyNames(row);
+            if (!this._columns) {
+                this._columns = Object.getOwnPropertyNames(row);
+            }
 
             this._columns.forEach(val => {
                 var td = $("<td>").text(val);
@@ -225,7 +233,6 @@ class TableWriter<T> {
     }
 }
 
-
 // Filter: Day, User
 // Click on VerStart -->  DeltaRange VerStart...VerEnd
 // Click on VoterCount --> Which recids? 
@@ -238,13 +245,17 @@ export class ShowSessionList extends Mode {
         this._clf = clf;
     }
 
+    public getDescription() : string {
+        return "This shows 'sessions' - which are continuous periods of active usage where the user is submitting results."
+    }
+
     public toHash(): string {
         return "show=sessions;" + this._clf.toString();
     }
 
     public render(ctx: RenderContext): void {
         var cl = ctx.changelist;
-        
+
         var cl = cl.applyFilter(this._clf);
 
         var users = cl.filterByUser();
@@ -271,7 +282,7 @@ export class ShowSessionList extends Mode {
                         return new ShowDeltaRange(clf);
                     }
                 );
-            
+
 
                 row.VerEnd = verEnd;
 
@@ -292,6 +303,120 @@ export class ShowSessionList extends Mode {
     }
 }
 
+// Each cell in the daily report. 
+class DailyX {
+    private _seconds: number = 0;
+
+    // $$$ track list of ranges (may not be consecutive)
+    private _verRange: bcl.Range<number>;
+    private _user: string;
+
+    // Get a mode object that shows this cell in detail. 
+    public getMode(): Mode {
+        var clf = new analyze.ChangelistFilter()
+            .setUser(this._user)
+            .setVersionRange(this._verRange);
+        return new ShowSessionList(clf);
+    }
+
+    public add(user: string, cluster: analyze.Cluster): void {
+        this._user = user;
+        if (!this._verRange) {
+            this._verRange = cluster.getVersionRange();
+        } else {
+            this._verRange.expandToInclude(cluster.getVersionRange().getStart());
+            this._verRange.expandToInclude(cluster.getVersionRange().getEnd());
+        }
+        this._seconds += cluster.getDurationSeconds();
+    }
+
+    // Return value in minutes
+    public toString(): string {
+        return Math.round(this._seconds / 60).toString();
+    }
+}
+
+// Show a 2d table, data[User][Day] = total minutes
+// clicking on a cell takes to that session 
+export class ShowDailyReport extends Mode {
+    private _clf: analyze.ChangelistFilter; // already has filter applied!
+
+    public constructor(filter: analyze.ChangelistFilter) {
+        super();
+        this._clf = filter;
+    }
+
+    public getDescription() : string {
+        return "This shows active usage per day for each user."; }
+
+
+    public toHash(): string {
+        return "show=daily;" + this._clf.toString();
+    }
+
+    public render(ctx: RenderContext): void {
+        var cl = ctx.changelist;
+        var cl = cl.applyFilter(this._clf);
+
+        var d = new bcl.Dict2d<DailyX>();
+
+        var userCls = cl.filterByUser();
+        userCls.forEach((user, cl) => {
+            var clusters = cl.getClustering();
+            clusters.forEach(cluster => {
+
+                var tr = cluster.getTimeRange();
+                var trStart = bcl.TimeRange.roundToDay(tr.getStart());
+                var day = sortableDay(trStart).toString();
+
+                var val = d.get(user, day);
+                if (!val) {
+                    val = new DailyX();
+                }
+                val.add(user, cluster);
+                d.add(user, day, val);
+            });
+        });
+
+        // Sort alphabetically 
+        // Columns are Dates. 
+        // Rows are people. 
+
+        var users = d.getKey1s();
+        var days = d.getKey2s();
+        days = days.sort();
+
+        var columnNames = ["User"].concat(days);
+
+        var tw = new TableWriter<any>(ctx.element, ctx, columnNames);
+
+        users.forEach(user => {
+            var row: any = {};
+            row.User = user;
+            days.forEach(day => {
+                var cell = d.get(user, day);
+                if (!cell) {
+                    row[day] = "";
+                } else {
+                    row[day] = new ClickableValue(cell.toString(), () => cell.getMode());
+                }
+            });
+
+            tw.writeRow(row);
+        });
+    }
+}
+
+// Rows for the show=deltarange
+class DeltaRow {
+    public Version: ClickableValue<number>; // Unique version number. 
+    public User: string;
+    public LocalTime: string;
+    public App: string;
+    // Include contents? 
+
+}
+
 // Shows a range of deltas 
 // Clicks:
 //   - on ver# --> ShowDelta(version)
@@ -303,6 +428,10 @@ export class ShowDeltaRange extends Mode {
         this._clf = filter;
     }
 
+    public getDescription() : string {
+        return "This is an advanced view and shows a specific range of 'deltas'. You can use this to drill into specific activity for sessions.";    }
+
+
     public toHash(): string {
         return "show=deltarange;" + this._clf.toString();
     }
@@ -310,33 +439,72 @@ export class ShowDeltaRange extends Mode {
 
     public render(ctx: RenderContext): void {
 
+
+        // Add an upload button
+        {            
+            var p = $("<p>");            
+            var btn = clickable(ctx, "View data by RecId", () => new ShowFlattenToRecId(this._clf))
+            p.append(btn);
+
+            ctx.element.append(p);
+        }
+
+
         var cl = ctx.changelist;
         cl = cl.applyFilter(this._clf);
 
-        var e1 = $("<table>");
-
-        var tr = $("<tr>");
-        var td1 = $("<td>").text("Version");
-        var td2 = $("<td>").text("User");
-        var td3 = $("<td>").text("UtcTime");
-        tr.append(td1).append(td2).append(td3);
-        e1.append(tr);
+        var tw = new TableWriter<DeltaRow>(ctx.element, ctx,
+            ["Version", "User", "LocalTime", "App"]);
 
         cl.forEach((delta: trcSheet.IDeltaInfo) => {
 
-            var tr = $("<tr>");
-            td1 = $("<td>").append(
-                clickable(ctx,
-                    delta.Version.toString(),
-                    () => new ShowDelta(delta.Version)));
+            var row = new DeltaRow();
+            row.User = delta.User;
+            row.App = delta.App;
+            row.Version = new ClickableValue(delta.Version,
+                () => new ShowDelta(delta.Version));
+                
 
-            var td2 = $("<td>").text(delta.User);
-            var td3 = $("<td>").text(delta.Timestamp);
-            tr.append(td1).append(td2).append(td3);
-            e1.append(tr);
+            row.LocalTime = new Date(delta.Timestamp).toLocaleString();
+
+            tw.writeRow(row);
+
         });
+   
+    }
+}
 
-        ctx.element.append(e1);
+// $$$ anomly list?  
+// Clicks:
+// - click on answer: show all versions that edited a specific cell (RecId,Column)
+//       -   is that a more complex filter? 
+// - click on RecId: show all versions that edited the recid. 
+export class ShowFlattenToRecId extends Mode {
+    private _clf: analyze.ChangelistFilter; // already has filter applied!
+
+    public constructor(filter: analyze.ChangelistFilter) {
+        super();
+        this._clf = filter;
+    }
+
+    public getDescription() : string {
+        return "This shows the information uploaded per each RecId.";
+     }
+
+
+    public toHash(): string {
+        return "show=byrecid;" + this._clf.toString();
+    }
+
+    public render(ctx: RenderContext): void {
+
+        var cl = ctx.changelist;
+        cl = cl.applyFilter(this._clf);
+
+        // $$$ Add click support?
+        var sc = cl.flattenByRecId();
+        var r = new trchtml.RenderSheet("contents", sc);
+        r.render();
     }
 }
 
@@ -355,14 +523,4 @@ export class ShowAllVers extends Mode
         r.render();
     }
 }
-
-export class FlattenToRecId extends Mode 
-{
-    public render(ctx : Context) : void {
-        // Apply filters 
-        var sc = ctx.changelist.flattenByRecId();
-
-        var r = new trchtml.RenderSheet("contents", sc);
-        r.render();
-    }
-}*/
+*/

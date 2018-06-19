@@ -107,7 +107,7 @@ export class MyPlugin {
         {
             // Blank .. set to something.
             // This will trigger an on-change event. 
-            window.location.hash = "show=sessions";
+            window.location.hash = "show=daily";
             return;
         }
         var x = decodeURIComponent(hash.substr(1));
@@ -141,6 +141,12 @@ export class MyPlugin {
 
         // Parse the msg
         // var m =_mode.Mode.parse("");
+
+        var hash = mode.toHash();
+        $("#queryx").text(hash);
+
+        var descr = mode.getDescription();
+        $("#descr").text(descr);
 
         this._ctx.element.empty();
         this._ctx.Next = (x) => this.show(x);
