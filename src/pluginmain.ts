@@ -148,6 +148,10 @@ export class MyPlugin {
         var descr = mode.getDescription();
         $("#descr").text(descr);
 
+        var map = $("#map");
+        map.empty();
+        $("#map").hide();
+
         this._ctx.element.empty();
         this._ctx.Next = (x) => this.show(x);
 

@@ -8,6 +8,8 @@ import * as trchtml from 'trc-web/html'
 // Used for rending onto screen
 declare var $: JQueryStatic;
 
+declare var google: any;
+
 // Different lists 
 
 //  key=value;key=value;key=value
@@ -233,6 +235,84 @@ class TableWriter<T> {
     }
 }
 
+class MapHelper 
+{
+    public init(cl : analyze.Changelist) : void {
+        $("#map").show();
+        var map = new google.maps.Map(document.getElementById('map'));
+
+        var infowindow = new google.maps.InfoWindow();
+        var bounds = new google.maps.LatLngBounds();
+        var latLng: any = {};
+
+        // Draw a walkpath 
+        var users = cl.getUsers();
+
+        var userCls = cl.filterByUser();
+
+        
+        for(var i in users) {
+            var randomColor = '#' + ('000000' + Math.floor(Math.random() * 16777215).toString(16)).slice(-6);
+
+            var user : string = users[i];
+            var userCl = userCls.get(user);
+
+            //var clusters = userCl.getClustering();
+            var deltas = userCl.getNormalizedDeltas();
+
+            
+            // path is array of {lat,lng}
+            var path : any =  [];
+
+            for(var i2 in deltas) {
+                var delta = deltas[i2];
+
+                
+                var pst = new google.maps.LatLng(delta.xloc.Lat, delta.xloc.Long);
+
+                /*
+                var marker = new google.maps.Marker({
+                    position: pst,
+                    map: map
+                });
+                */
+
+                /*
+                var infoContent = '<div class="info_content">' +
+                '<h3>' + delta.delta +"-" + delta.deltaIdx + '</h3>' +
+                '<p>' + delta.getUser() + '</p></div>';
+                */
+
+                /*
+                google.maps.event.addListener(marker, 'click', (function (marker, j, infoContent) {
+                    return function () {
+                        infowindow.setContent(infoContent);
+                        infowindow.open(map, marker);
+                    }
+                })(marker, j, infoContent));*/
+         
+                path.push({lat:delta.xloc.Lat, lng : delta.xloc.Long});
+                bounds.extend(pst);
+            }
+
+            var flightPath = new google.maps.Polyline({
+                path: path,
+                geodesic: true,
+                strokeColor: randomColor,
+                strokeOpacity: 1.0,
+                strokeWeight: 3
+            });
+            flightPath.setMap(map);
+
+        } // per user
+        
+
+        map.fitBounds(bounds);       // auto-zoom
+        map.panToBounds(bounds);     // auto-center
+    }
+}
+
+
 // Filter: Day, User
 // Click on VerStart -->  DeltaRange VerStart...VerEnd
 // Click on VoterCount --> Which recids? 
@@ -257,6 +337,9 @@ export class ShowSessionList extends Mode {
         var cl = ctx.changelist;
 
         var cl = cl.applyFilter(this._clf);
+
+        var m = new MapHelper();
+        m.init(cl);
 
         var users = cl.filterByUser();
 
@@ -330,9 +413,12 @@ class DailyX {
         this._seconds += cluster.getDurationSeconds();
     }
 
+    public getMinutes() : number {
+        return Math.round(this._seconds / 60);
+    }
     // Return value in minutes
     public toString(): string {
-        return Math.round(this._seconds / 60).toString();
+        return this.getMinutes().toString();
     }
 }
 
@@ -347,7 +433,8 @@ export class ShowDailyReport extends Mode {
     }
 
     public getDescription() : string {
-        return "This shows active usage per day for each user."; }
+        return "This shows 'active' usage (in minutes) per day for each user. Active usage is a span on consecutively uploading data. " + 
+        "Days are in YYYYMMDD format for easy sorting."; }
 
 
     public toHash(): string {
@@ -390,20 +477,38 @@ export class ShowDailyReport extends Mode {
 
         var tw = new TableWriter<any>(ctx.element, ctx, columnNames);
 
+        var totals = new bcl.Dict<number>(); // total per-day 
+        days.forEach(day => { totals.add(day, 0); });
+
         users.forEach(user => {
             var row: any = {};
             row.User = user;
             days.forEach(day => {
                 var cell = d.get(user, day);
+                var min = 0;
                 if (!cell) {
                     row[day] = "";
                 } else {
+                    min = cell.getMinutes();
                     row[day] = new ClickableValue(cell.toString(), () => cell.getMode());
                 }
+                var t = totals.get(day);
+                t += min;
+                totals.add(day, t);
+                
             });
 
             tw.writeRow(row);
         });
+
+        // Totals 
+        var row: any = {};
+        row.User = "TOTAL";
+        days.forEach(day => {
+            var t = totals.get(day);
+            row[day] =  t;            
+        });
+        tw.writeRow(row);
     }
 }
 
@@ -413,7 +518,7 @@ class DeltaRow {
     public User: string;
     public LocalTime: string;
     public App: string;
-    // Include contents? 
+    public Contents: string; 
 
 }
 
@@ -440,6 +545,7 @@ export class ShowDeltaRange extends Mode {
     public render(ctx: RenderContext): void {
 
 
+
         // Add an upload button
         {            
             var p = $("<p>");            
@@ -453,8 +559,11 @@ export class ShowDeltaRange extends Mode {
         var cl = ctx.changelist;
         cl = cl.applyFilter(this._clf);
 
+        var m = new MapHelper();
+        m.init(cl);
+
         var tw = new TableWriter<DeltaRow>(ctx.element, ctx,
-            ["Version", "User", "LocalTime", "App"]);
+            ["Version", "User", "LocalTime", "App", "Contents"]);
 
         cl.forEach((delta: trcSheet.IDeltaInfo) => {
 
@@ -462,10 +571,10 @@ export class ShowDeltaRange extends Mode {
             row.User = delta.User;
             row.App = delta.App;
             row.Version = new ClickableValue(delta.Version,
-                () => new ShowDelta(delta.Version));
-                
+                () => new ShowDelta(delta.Version));                
 
             row.LocalTime = new Date(delta.Timestamp).toLocaleString();
+            row.Contents = JSON.stringify(delta.Value);
 
             tw.writeRow(row);
 
@@ -500,6 +609,9 @@ export class ShowFlattenToRecId extends Mode {
 
         var cl = ctx.changelist;
         cl = cl.applyFilter(this._clf);
+
+        var m = new MapHelper();
+        m.init(cl);
 
         // $$$ Add click support?
         var sc = cl.flattenByRecId();
