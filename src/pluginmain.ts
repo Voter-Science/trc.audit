@@ -19,6 +19,7 @@ import * as trchtml from 'trc-web/html'
 
 import * as bcl from 'trc-analyze/collections'
 import * as analyze from 'trc-analyze/core'
+import * as hh from 'trc-analyze/household'
 
 import * as _mode from './mode'
 
@@ -82,20 +83,23 @@ export class MyPlugin {
             this._analyze = a;
 
             // this will force a cache 
-            return a.getAllChangesAsync().then(changelist => {
-                this._ctx = new _mode.RenderContext();
-                this._ctx.changelist = changelist;
-                var e = $("#contents");
-                this._ctx.element = e;
+            return a.getHouseholder().then(householder =>
+                a.getAllChangesAsync().then(changelist => {
+                    this._ctx = new _mode.RenderContext();
+                    this._ctx.changelist = changelist;
+                    this._ctx.normChangelist = new analyze.NormChangeList(changelist.getNormalizedDeltas());
+                    this._ctx.householder = householder;
+                    var e = $("#contents");
+                    this._ctx.element = e;
 
-                window.onhashchange = (ev: HashChangeEvent) => {
+                    window.onhashchange = (ev: HashChangeEvent) => {
+                        this.showCurrentHash();
+                    };
+
+                    //var mode = new _mode.ShowDeltaRange(changelist);
+                    //this.show(mode)                
                     this.showCurrentHash();
-                };
-
-                //var mode = new _mode.ShowDeltaRange(changelist);
-                //this.show(mode)                
-                this.showCurrentHash();
-            });
+                }));
         });
     }
 
@@ -103,8 +107,7 @@ export class MyPlugin {
     // This does _not_ set hash, since that would retrigger the onhashchange and cause a loop.
     private showCurrentHash() {
         var hash = window.location.hash; // Escaped value, starts with '#'
-        if (!hash || hash.length < 2) 
-        {
+        if (!hash || hash.length < 2) {
             // Blank .. set to something.
             // This will trigger an on-change event. 
             window.location.hash = "show=daily";

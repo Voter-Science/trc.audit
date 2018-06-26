@@ -3,6 +3,7 @@ import * as trcSheet from 'trc-sheet/sheet'
 import { SheetContentsIndex, SheetContents, ISheetContents } from 'trc-sheet/sheetContents';
 import * as bcl from 'trc-analyze/collections'
 import * as analyze from 'trc-analyze/core'
+import * as hh from 'trc-analyze/household'
 import * as trchtml from 'trc-web/html'
 
 // Used for rending onto screen
@@ -63,6 +64,9 @@ function addNormalizedDay(x: ISheetContents, columnName: string, newColumnName: 
 // Context passed to rendering 
 export class RenderContext {
     public changelist: analyze.Changelist;
+    public normChangelist: analyze.NormChangeList;
+
+    public householder: hh.IHousheholding;
 
     public element: JQuery<HTMLElement>;
 
@@ -86,6 +90,7 @@ export abstract class Mode {
         // Could be lots of parser errors
         var obj = bcl.KeyParser.parse(value);
 
+        var normFilter = analyze.NormChangeListFilter.parse(value);
         var clf = analyze.ChangelistFilter.parse(value);
 
         var kind = obj["show"];
@@ -98,8 +103,13 @@ export abstract class Mode {
             return new ShowDeltaRange(clf);
 
         }// sessions
+
         if (kind == "sessions") {
-            return new ShowSessionList(clf);
+            return new ShowSessionList(normFilter);
+        }
+
+        if (kind == "ndeltarange") {
+            return new ShowNDeltaRange(normFilter);
         }
 
         // Flatten by RecId, like Blame report. 
@@ -108,13 +118,13 @@ export abstract class Mode {
         }
 
         if (kind == "daily") {
-            return new ShowDailyReport(clf);
+            return new ShowDailyReport(normFilter);
         }
         throw ("Unidentified mode: " + kind);
 
     }
 
-    public getDescription() : string { return ""; } 
+    public getDescription(): string { return ""; }
 
     public abstract render(ctx: RenderContext): void;
 
@@ -132,7 +142,7 @@ export class ShowDelta extends Mode {
     }
 
     public render(ctx: RenderContext): void {
-        var delta: trcSheet.IDeltaInfo = ctx.changelist.get(this._ver);
+        var delta: trcSheet.IDeltaInfo = ctx.changelist.getRawDelta(this._ver);
 
         var json = JSON.stringify(delta, null, 2);
 
@@ -144,9 +154,9 @@ export class ShowDelta extends Mode {
         return "show=delta;ver=" + this._ver;
     }
 
-    public getDescription() : string {
-        return "This is an advanced view. It shows an individual piece of information (a 'delta') uploaded by the mobile clients. " + 
-        "Each delta is given a unique version number, and may edit one of more RecIds."
+    public getDescription(): string {
+        return "This is an advanced view. It shows an individual piece of information (a 'delta') uploaded by the mobile clients. " +
+            "Each delta is given a unique version number, and may edit one of more RecIds."
     }
 }
 
@@ -166,13 +176,19 @@ class SessionRow {
     public User: string;
     public VoterCount: number;
     public VerStart: ClickableValue<number>;
-    public VerEnd: number;
+    //public VerEnd: number;
     public DayNumber: number;
     public Day: string;
     public StartTime: string;
     public EndTime: string;
     public TotalMinutes: number;
     public TotalDuration: string;
+
+    public Distance: number;
+    public HouseholdCount: number;
+
+    public GapDistanceKM: number;
+    public GapTimeMinutes: number;
 }
 
 class TableWriter<T> {
@@ -215,16 +231,17 @@ class TableWriter<T> {
             var td = $("<td>");
 
             var val: any = (<any>row)[columnName];
-
-            var next = val._next;
-            if (next) {
-                // clicabkle
-                td = td.append(
-                    clickable(this._ctx,
-                        val.toString(),
-                        next));
-            } else {
-                td.text(val);
+            if (!!val) {
+                var next = val._next;
+                if (next) {
+                    // clicabkle
+                    td = td.append(
+                        clickable(this._ctx,
+                            val.toString(),
+                            next));
+                } else {
+                    td.text(val);
+                }
             }
             tr.append(td);
         });
@@ -235,9 +252,8 @@ class TableWriter<T> {
     }
 }
 
-class MapHelper 
-{
-    public init(cl : analyze.Changelist) : void {
+class MapHelper {
+    public init(cl: analyze.NormChangeList): void {
         $("#map").show();
         var map = new google.maps.Map(document.getElementById('map'));
 
@@ -250,24 +266,18 @@ class MapHelper
 
         var userCls = cl.filterByUser();
 
-        
-        for(var i in users) {
+
+        for (var i in users) {
             var randomColor = '#' + ('000000' + Math.floor(Math.random() * 16777215).toString(16)).slice(-6);
 
-            var user : string = users[i];
+            var user: string = users[i];
             var userCl = userCls.get(user);
 
-            //var clusters = userCl.getClustering();
-            var deltas = userCl.getNormalizedDeltas();
-
-            
             // path is array of {lat,lng}
-            var path : any =  [];
+            var path: any = [];
 
-            for(var i2 in deltas) {
-                var delta = deltas[i2];
+            userCl.forEach(delta => {
 
-                
                 var pst = new google.maps.LatLng(delta.xloc.Lat, delta.xloc.Long);
 
                 /*
@@ -290,10 +300,10 @@ class MapHelper
                         infowindow.open(map, marker);
                     }
                 })(marker, j, infoContent));*/
-         
-                path.push({lat:delta.xloc.Lat, lng : delta.xloc.Long});
+
+                path.push({ lat: delta.xloc.Lat, lng: delta.xloc.Long });
                 bounds.extend(pst);
-            }
+            });
 
             var flightPath = new google.maps.Polyline({
                 path: path,
@@ -305,7 +315,7 @@ class MapHelper
             flightPath.setMap(map);
 
         } // per user
-        
+
 
         map.fitBounds(bounds);       // auto-zoom
         map.panToBounds(bounds);     // auto-center
@@ -313,19 +323,20 @@ class MapHelper
 }
 
 
+// Shows list of sessions (Clusters)
 // Filter: Day, User
 // Click on VerStart -->  DeltaRange VerStart...VerEnd
 // Click on VoterCount --> Which recids? 
 // Click on househodls --> Which households?
 export class ShowSessionList extends Mode {
-    private _clf: analyze.ChangelistFilter; // already has filter applied!
+    private _clf: analyze.NormChangeListFilter; // already has filter applied!
 
-    public constructor(clf: analyze.ChangelistFilter) {
+    public constructor(clf: analyze.NormChangeListFilter) {
         super();
         this._clf = clf;
     }
 
-    public getDescription() : string {
+    public getDescription(): string {
         return "This shows 'sessions' - which are continuous periods of active usage where the user is submitting results."
     }
 
@@ -334,40 +345,41 @@ export class ShowSessionList extends Mode {
     }
 
     public render(ctx: RenderContext): void {
-        var cl = ctx.changelist;
-
+        var cl = ctx.normChangelist;
         var cl = cl.applyFilter(this._clf);
 
         var m = new MapHelper();
         m.init(cl);
 
         var users = cl.filterByUser();
-
         var table = new TableWriter<SessionRow>(ctx.element, ctx);
-
 
         users.forEach((user, cl) => {
             var clusters = cl.getClustering();
+
+            var lastLoc: bcl.IGeoPoint;
+            var lastTime: Date;
+
             clusters.forEach(cluster => {
 
                 var row = new SessionRow();
                 row.User = user;
                 row.VoterCount = cluster.getUniqueCount();
 
-                var verStart = cluster.getVersionRange().getStart();
-                var verEnd = cluster.getVersionRange().getEnd();
-                row.VerStart = new ClickableValue<number>(verStart,
+                var verStart = cluster.getTimeRange().getStart();
+                //var verEnd = cluster.getTimeRange().getEnd();
+                row.VerStart = new ClickableValue<number>(verStart.valueOf(),
                     () => {
                         // Clicking on version number takes us to that range. 
-                        var clf = new analyze.ChangelistFilter()
+                        var clf = new analyze.NormChangeListFilter()
                             .setUser(user)
-                            .setVersionRange(cluster.getVersionRange());
-                        return new ShowDeltaRange(clf);
+                            .setTimeRange(cluster.getTimeRange())
+                        return new ShowNDeltaRange(clf);
                     }
                 );
 
 
-                row.VerEnd = verEnd;
+                // row.VerEnd = verEnd.valueOf();
 
                 var tr = cluster.getTimeRange();
                 var trStart = bcl.TimeRange.roundToDay(tr.getStart());
@@ -380,6 +392,26 @@ export class ShowSessionList extends Mode {
                 row.TotalMinutes = Math.round(tr.getDurationSeconds() / 60);
                 row.TotalDuration = bcl.TimeRange.prettyPrintSeconds(cluster.getTimeRange().getDurationSeconds());
 
+                row.Distance = cluster.getTotalDist();
+                row.HouseholdCount = cluster.getUniqueHouseholdCount(ctx.householder);
+
+                // Record gaps between sessions
+                if (!!lastLoc) {
+                    row.GapDistanceKM = bcl.GeoHelper.getDistanceFromLatLonInKm(lastLoc, cluster.getGeoStart());
+                } else { 
+                    row.GapDistanceKM  = NaN;
+                }
+                if (!!lastTime) {
+                    var timeGap = new bcl.TimeRange(
+                        lastTime,
+                        cluster.getTimeRange().getStart());
+                    row.GapTimeMinutes = Math.round(timeGap.getDurationSeconds() / 60);
+                } else {
+                    row.GapTimeMinutes = NaN;
+                }
+                lastTime = cluster.getTimeRange().getEnd();
+                lastLoc = cluster.getGeoEnd();
+
                 table.writeRow(row);
             });
         });
@@ -391,29 +423,30 @@ class DailyX {
     private _seconds: number = 0;
 
     // $$$ track list of ranges (may not be consecutive)
-    private _verRange: bcl.Range<number>;
-    private _user: string;
+    private readonly _verRange: bcl.TimeRange;
+    private readonly _user: string;
+
+    public constructor(user: string, day: Date) {
+        this._user = user;
+
+        var start = bcl.TimeRange.roundToDay(day);
+        var end = new Date(start.getTime() + 60 * 60 * 24 * 1000 - 1); // last MS of the day 
+        this._verRange = new bcl.TimeRange(start, end);
+    }
 
     // Get a mode object that shows this cell in detail. 
     public getMode(): Mode {
-        var clf = new analyze.ChangelistFilter()
+        var clf = new analyze.NormChangeListFilter()
             .setUser(this._user)
-            .setVersionRange(this._verRange);
+            .setTimeRange(this._verRange);
         return new ShowSessionList(clf);
     }
 
-    public add(user: string, cluster: analyze.Cluster): void {
-        this._user = user;
-        if (!this._verRange) {
-            this._verRange = cluster.getVersionRange();
-        } else {
-            this._verRange.expandToInclude(cluster.getVersionRange().getStart());
-            this._verRange.expandToInclude(cluster.getVersionRange().getEnd());
-        }
+    public build(cluster: analyze.Cluster): void {
         this._seconds += cluster.getDurationSeconds();
     }
 
-    public getMinutes() : number {
+    public getMinutes(): number {
         return Math.round(this._seconds / 60);
     }
     // Return value in minutes
@@ -425,16 +458,17 @@ class DailyX {
 // Show a 2d table, data[User][Day] = total minutes
 // clicking on a cell takes to that session 
 export class ShowDailyReport extends Mode {
-    private _clf: analyze.ChangelistFilter; // already has filter applied!
+    private _clf: analyze.NormChangeListFilter; // already has filter applied!
 
-    public constructor(filter: analyze.ChangelistFilter) {
+    public constructor(filter: analyze.NormChangeListFilter) {
         super();
         this._clf = filter;
     }
 
-    public getDescription() : string {
-        return "This shows 'active' usage (in minutes) per day for each user. Active usage is a span on consecutively uploading data. " + 
-        "Days are in YYYYMMDD format for easy sorting."; }
+    public getDescription(): string {
+        return "This shows 'active' usage (in minutes) per day for each user. Active usage is a span on consecutively uploading data. " +
+            "Days are in YYYYMMDD format for easy sorting.";
+    }
 
 
     public toHash(): string {
@@ -442,26 +476,28 @@ export class ShowDailyReport extends Mode {
     }
 
     public render(ctx: RenderContext): void {
-        var cl = ctx.changelist;
-        var cl = cl.applyFilter(this._clf);
+        var cl = ctx.normChangelist;
+        cl = cl.applyFilter(this._clf);
 
+        // map of each user's daily activity. 
+        // (per-User, per-day) --> DailyX
         var d = new bcl.Dict2d<DailyX>();
 
-        var userCls = cl.filterByUser();
-        userCls.forEach((user, cl) => {
-            var clusters = cl.getClustering();
+        var userCls: bcl.Dict<analyze.NormChangeList> = cl.filterByUser();
+        userCls.forEach((user, cl2) => {
+            var clusters = cl2.getClustering();
             clusters.forEach(cluster => {
 
                 var tr = cluster.getTimeRange();
                 var trStart = bcl.TimeRange.roundToDay(tr.getStart());
                 var day = sortableDay(trStart).toString();
 
-                var val = d.get(user, day);
-                if (!val) {
-                    val = new DailyX();
+                var status = d.get(user, day);
+                if (!status) {
+                    status = new DailyX(user, trStart);
                 }
-                val.add(user, cluster);
-                d.add(user, day, val);
+                status.build(cluster);
+                d.add(user, day, status);
             });
         });
 
@@ -495,7 +531,7 @@ export class ShowDailyReport extends Mode {
                 var t = totals.get(day);
                 t += min;
                 totals.add(day, t);
-                
+
             });
 
             tw.writeRow(row);
@@ -506,9 +542,84 @@ export class ShowDailyReport extends Mode {
         row.User = "TOTAL";
         days.forEach(day => {
             var t = totals.get(day);
-            row[day] =  t;            
+            row[day] = t;
         });
         tw.writeRow(row);
+    }
+}
+
+// Rows for the show=deltarange
+class NDeltaRow {
+    public Version: ClickableValue<string>; // Jump to delta
+    public RecId: string;
+    public HouseholdId: string;
+    public User: string;
+    public LocalTime: string;
+    public App: string;
+    public Contents: string;
+}
+
+// Show normalized range of deltas
+export class ShowNDeltaRange extends Mode {
+    private _clf: analyze.NormChangeListFilter; // already has filter applied!
+
+    public constructor(filter: analyze.NormChangeListFilter) {
+        super();
+        this._clf = filter;
+    }
+
+    public getDescription(): string {
+        return "This is an advanced view and shows a specific range of updates. " +
+            "You can use this to drill into specific activity for sessions.";
+    }
+
+
+    public toHash(): string {
+        return "show=ndeltarange;" + this._clf.toString();
+    }
+
+    public render(ctx: RenderContext): void {
+
+        // Add an upload button
+        {
+            var p = $("<p>");
+            // $$$
+            //var btn = clickable(ctx, "View data by RecId", () => new ShowFlattenToRecId(this._clf))
+            //p.append(btn);
+            //ctx.element.append(p);
+        }
+
+        var cl = ctx.normChangelist;
+        cl = cl.applyFilter(this._clf);
+
+        var m = new MapHelper();
+        m.init(cl);
+
+        var tw = new TableWriter<NDeltaRow>(ctx.element, ctx,
+            ["Version", "RecId", "HouseholdId", "User", "LocalTime", "App", "Contents"]);
+
+        cl.forEach((item) => {
+
+            var row = new NDeltaRow();
+            row.RecId = item.recId;
+            row.HouseholdId = ctx.householder.getHHID(item.recId);
+            row.User = item.getUser();
+            row.App = item.getApp();
+
+            var verstr = item.delta.Version + "-" + item.deltaIdx;
+            row.Version = new ClickableValue(verstr,
+                () => new ShowDelta(item.delta.Version));
+
+            row.LocalTime = item.xtimestamp.toLocaleString();
+
+            var x = "";
+            item.forEach((columnName, newValue) => {
+                x += columnName + "=" + newValue + "; ";
+            });
+            row.Contents = x;
+            tw.writeRow(row);
+        });
+
     }
 }
 
@@ -518,10 +629,9 @@ class DeltaRow {
     public User: string;
     public LocalTime: string;
     public App: string;
-    public Contents: string; 
+    public Contents: string;
 
 }
-
 // Shows a range of deltas 
 // Clicks:
 //   - on ver# --> ShowDelta(version)
@@ -533,8 +643,9 @@ export class ShowDeltaRange extends Mode {
         this._clf = filter;
     }
 
-    public getDescription() : string {
-        return "This is an advanced view and shows a specific range of 'deltas'. You can use this to drill into specific activity for sessions.";    }
+    public getDescription(): string {
+        return "This is an advanced view and shows a specific range of 'deltas'. You can use this to drill into specific activity for sessions.";
+    }
 
 
     public toHash(): string {
@@ -547,8 +658,8 @@ export class ShowDeltaRange extends Mode {
 
 
         // Add an upload button
-        {            
-            var p = $("<p>");            
+        {
+            var p = $("<p>");
             var btn = clickable(ctx, "View data by RecId", () => new ShowFlattenToRecId(this._clf))
             p.append(btn);
 
@@ -559,19 +670,20 @@ export class ShowDeltaRange extends Mode {
         var cl = ctx.changelist;
         cl = cl.applyFilter(this._clf);
 
-        var m = new MapHelper();
-        m.init(cl);
+        var map = new MapHelper();
+        var ncl = new analyze.NormChangeList(cl.getNormalizedDeltas());
+        map.init(ncl);
 
         var tw = new TableWriter<DeltaRow>(ctx.element, ctx,
             ["Version", "User", "LocalTime", "App", "Contents"]);
 
-        cl.forEach((delta: trcSheet.IDeltaInfo) => {
+        cl.forEachRawDelta((delta: trcSheet.IDeltaInfo) => {
 
             var row = new DeltaRow();
             row.User = delta.User;
             row.App = delta.App;
             row.Version = new ClickableValue(delta.Version,
-                () => new ShowDelta(delta.Version));                
+                () => new ShowDelta(delta.Version));
 
             row.LocalTime = new Date(delta.Timestamp).toLocaleString();
             row.Contents = JSON.stringify(delta.Value);
@@ -579,7 +691,7 @@ export class ShowDeltaRange extends Mode {
             tw.writeRow(row);
 
         });
-   
+
     }
 }
 
@@ -596,9 +708,9 @@ export class ShowFlattenToRecId extends Mode {
         this._clf = filter;
     }
 
-    public getDescription() : string {
+    public getDescription(): string {
         return "This shows the information uploaded per each RecId.";
-     }
+    }
 
 
     public toHash(): string {
@@ -611,7 +723,8 @@ export class ShowFlattenToRecId extends Mode {
         cl = cl.applyFilter(this._clf);
 
         var m = new MapHelper();
-        m.init(cl);
+        var ncl = new analyze.NormChangeList(cl.getNormalizedDeltas());
+        m.init(ncl);
 
         // $$$ Add click support?
         var sc = cl.flattenByRecId();
