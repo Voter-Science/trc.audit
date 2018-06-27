@@ -31,6 +31,7 @@ declare var $: JQueryStatic;
 // Provide easy error handle for reporting errors from promises.  Usage:
 //   p.catch(showError);
 declare var showError: (error: any) => void; // error handler defined in index.html
+declare var clearError: () => void; // error handler defined in index.html
 
 export class MyPlugin {
     private _sheet: trcSheet.SheetClient;
@@ -44,15 +45,8 @@ export class MyPlugin {
         var pluginClient = new plugin.PluginClient(auth, opts);
 
         // Do any IO here...
-
-        var throwError = false; // $$$ remove this
-
         var plugin2 = new MyPlugin(pluginClient);
         return plugin2.InitAsync().then(() => {
-            if (throwError) {
-                throw "some error";
-            }
-
             return plugin2;
         });
     }
@@ -62,10 +56,82 @@ export class MyPlugin {
         this._sheet = new trcSheet.SheetClient(p.HttpClient, p.SheetId);
     }
 
+    private appendDate(x: string, elementId: string, name: string): string {
+        var val: string = <string> $("#" + elementId).val();
+        if (!!val && val.length > 0) {
+            // $$$ Be sure to validate!!
+            var d = new Date(val).toISOString();
+            x += ";" + name + "=" + d;
+        }
+        return x;
+    }
+    private appendX(x: string, elementId: string, name: string): string {        
+        var val: string = <string> $("#" + elementId).val();
+        if (!!val && val.length > 0) {
+            x += ";" + name + "=" + val;
+        }
+        return x;
+    }
+    // When user presses "Apply" button to aply new filter"
+    public OnApplyFilter(): void {
+        clearError();
+        try
+        {
+            var mode = $("#mode_select option:selected").val();
 
+            var x = "show=" + mode;
+            x = this.appendX(x, "f_ver", "ver");
+            x = this.appendX(x, "f_users", "user");
+            x = this.appendDate(x, "f_utcstart", "dateutcstart");
+            x = this.appendDate(x, "f_utcend", "dateutcend");
+
+            // alert(x);
+            window.location.hash = x;
+        }
+        catch (error) {
+            showError(error);
+        }
+    }
+
+    private updateFilters() : void {
+        var val = <string> $("#mode_select option:selected").val();
+        
+        $("#group_ver").hide();
+        $("#group_users").hide();
+        $("#group_UtcRange").hide();
+
+        var descr = _mode.ModeDescr.lookup(val);
+        if (descr.useTimeRange()) {
+            $("#group_UtcRange").show();
+        }
+        if (descr.useUsers()) {
+            $("#group_users").show();
+        }
+        if (descr.useVerNum()) {
+            $("#group_ver").show();
+        }           
+    }
     // Make initial network calls to setup the plugin. 
     // Need this as a separate call from the ctor since ctors aren't async. 
     private InitAsync(): Promise<void> {
+
+        {
+            $("#f_apply").click(() => this.OnApplyFilter());
+
+            var s = $("<select>").attr("id", "mode_select").change(() => {
+                this.updateFilters();                   
+            });
+
+            
+            for(var descr  of  _mode.ModeDescr.List) {
+                s.append($("<option>").val(descr._hashName)
+                    .text(descr._descr));    
+            }         
+
+            $("#modepicker").append(s);
+        }
+
+
         return this._sheet.getInfoAsync().then(info => {
 
             $("#SheetName").text(info.Name);
@@ -147,6 +213,51 @@ export class MyPlugin {
 
         var hash = mode.toHash();
         $("#queryx").text(hash);
+
+
+        // Set filters 
+        // Enable disable groups based on mode
+        {
+            var obj = bcl.KeyParser.parse(hash);
+            var kind = obj["show"];
+            $("#mode_select").val(kind);
+            this.updateFilters();
+            // $$$ Fire update here 
+
+            var user = obj["user"];
+            if (!!user) {
+                $("#f_users").val(user);
+            } else {
+                $("#f_users").val("");
+            }
+
+            var ver = obj["ver"];
+            if (!!ver) {
+                $("#f_ver").val(ver);
+            } else {
+                $("#f_ver").val("");
+            }
+
+            // $$$ Can w eget this to work with type="datetime-local" ?
+            // What's the format to set?  https://www.w3schools.com/jsref/prop_datetime-local_value.asp
+
+            var utcStart = obj["dateutcstart"];
+            if (!!utcStart) {
+                var d = new Date(utcStart).toLocaleString();
+                $("#f_utcstart").val(d);
+            } else {
+                $("#f_utcstart").val("");
+            }
+
+            var utcEnd = obj["dateutcend"];
+            if (!!utcEnd) {
+                var d = new Date(utcEnd).toLocaleString();
+                $("#f_utcend").val(d);
+            } else {
+                $("#f_utcend").val("");
+            }
+        }
+
 
         var descr = mode.getDescription();
         $("#descr").text(descr);

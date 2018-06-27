@@ -65,10 +65,11 @@
     <span id="_errorbtn" style="display:none">
         <button onclick="clearError()">Clear error</button>
     </span>
-    <div id="_mainbody" style="display:none">
+    <div id="_mainbody" style="display:none" class="container">
         <div id="status"></div>
 
         <h2> Audit</h2>
+        <p>This plugin lets you query changes submitted by users.</p>
         <!-- 
         <table>
             <tr><td>Name:</td><td><div id="SheetName"></div></td></tr>
@@ -77,11 +78,41 @@
         </table> 
         -->
 
+        <div class="panel panel-default">
+            <div class="panel-heading">What to query?</div>
+            <div class="panel-body">
+                Mode:
+                <div id="modepicker"></div>
+
+                <p>Additional filters (leave blank to ignore):</p>
+
+                <div id="group_ver">
+                    Version#:
+                    <input type="number" id="f_ver" />
+                </div>
+                <div id="group_users">
+                    User:
+                    <input size=80 id="f_users" />
+                </div>
+                <div id="group_UtcRange">
+                    Time range:
+                    <input id="f_utcstart" /> to
+                    <input id="f_utcend" /> 
+                    <p>Time is in format:                     
+                        '<b>MM/DD/YYYY</b>,<b>HH:MM:SS AM</b>' (local time)  or                     
+                        '<b>YYYY-MM-DD</b>T<b>HH:MM:SS</b>Z' (utc time)
+                    </p>
+                </div>
+            </div>
+
+            <button id="f_apply" class="btn">Apply!</button>
+        </div>
+
         <p>
             <div id="descr"></div>
         </p>
 
-        <p>Parameter for this view:</p>
+        <p>Parameter for this view: (you can also copy the url)</p>
         <pre id="queryx">
         </pre>
 
@@ -89,6 +120,7 @@
             <div id="descr"></div>
         </p>
         <div class="col-sm-12" id="map" style="width:100%; height:500px; "></div>
+        <br/>
 
         <div id="contents"></div>
 

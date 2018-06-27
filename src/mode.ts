@@ -46,6 +46,29 @@ function sortableDay(x: Date): number {
     return year * 10000 + month * 100 + day;
 }
 
+// Round a date to the start date in local time. 
+function rountToLocalStartDay(d : Date) : Date {
+
+    var year = d.getFullYear(); // 2018 
+    var month = d.getMonth(); // 0-based; but Date ctor is also 0-based
+    var date = d.getDate(); //  1-based 
+
+    return new Date(year, month, date );
+
+/*
+    const p = 24 * 60 * 60 * 1000; // milliseconds in a day 
+
+    var t = d.getTime(); // Milliseconds  since UTC
+
+    var start = Math.round(t / p) * p; // start of UTC day
+
+    var minutes = d.getTimezoneOffset(); //  minutes, ie 420 = 7 hours. 
+    start += minutes *60 *1000; // adjust to local time
+    
+    return new Date(start);*/
+}
+
+/*
 function addNormalizedDay(x: ISheetContents, columnName: string, newColumnName: string): void {
     var col = x[columnName];
 
@@ -59,7 +82,7 @@ function addNormalizedDay(x: ISheetContents, columnName: string, newColumnName: 
         var trStart = bcl.TimeRange.roundToDay(d);
         days.push(sortableDay(trStart).toString());
     }
-}
+}*/
 
 // Context passed to rendering 
 export class RenderContext {
@@ -83,6 +106,45 @@ function clickable(ctx: RenderContext, text: string, next: () => Mode): JQuery<H
     return td1;
 }
 
+// Static description of the different modes. 
+export class ModeDescr {
+    public static List: ModeDescr[] = [
+        new ModeDescr("daily", "Show a daily report for all users"),
+        new ModeDescr("sessions", "Show active sessions for users"),
+        new ModeDescr("ndeltarange", "Show specific inputs per session"),
+        new ModeDescr("delta", "Show single raw delta"),
+        new ModeDescr("deltarange", "Show range of raw deltas"),
+        new ModeDescr("byrecid", "Show deltas grouped by RecId"),
+    ];
+
+    public static lookup(name : string) : ModeDescr {
+        for(var descr of ModeDescr.List) {
+            if (descr._hashName == name) {
+                return descr;
+            }
+        }
+        return undefined;
+    }
+
+    public readonly _hashName: string;
+    public readonly _descr: string;
+
+    public useVerNum(): boolean {
+        return this._hashName == "delta";
+     }
+     public useUsers() : boolean { 
+        return this._hashName != "delta";
+     }
+     public useTimeRange() : boolean { 
+        return this._hashName != "delta";
+     }
+
+    constructor(hashName: string, descr: string) {
+        this._hashName = hashName;
+        this._descr = descr;
+    }
+}
+
 // All modes are totally serializable. 
 export abstract class Mode {
     static parse(value: string): Mode {
@@ -102,7 +164,7 @@ export abstract class Mode {
             // var ver = parseInt(obj["ver"]);                    
             return new ShowDeltaRange(clf);
 
-        }// sessions
+        } // sessions
 
         if (kind == "sessions") {
             return new ShowSessionList(normFilter);
@@ -381,7 +443,7 @@ export class ShowSessionList extends Mode {
 
                 // row.VerEnd = verEnd.valueOf();
 
-                var tr = cluster.getTimeRange();
+                var tr = cluster.getTimeRange(); // local time 
                 var trStart = bcl.TimeRange.roundToDay(tr.getStart());
                 row.DayNumber = sortableDay(trStart);
                 row.Day = trStart.toDateString();
@@ -398,8 +460,8 @@ export class ShowSessionList extends Mode {
                 // Record gaps between sessions
                 if (!!lastLoc) {
                     row.GapDistanceKM = bcl.GeoHelper.getDistanceFromLatLonInKm(lastLoc, cluster.getGeoStart());
-                } else { 
-                    row.GapDistanceKM  = NaN;
+                } else {
+                    row.GapDistanceKM = NaN;
                 }
                 if (!!lastTime) {
                     var timeGap = new bcl.TimeRange(
@@ -422,14 +484,13 @@ export class ShowSessionList extends Mode {
 class DailyX {
     private _seconds: number = 0;
 
-    // $$$ track list of ranges (may not be consecutive)
     private readonly _verRange: bcl.TimeRange;
     private readonly _user: string;
 
     public constructor(user: string, day: Date) {
         this._user = user;
 
-        var start = bcl.TimeRange.roundToDay(day);
+        var start = rountToLocalStartDay(day);
         var end = new Date(start.getTime() + 60 * 60 * 24 * 1000 - 1); // last MS of the day 
         this._verRange = new bcl.TimeRange(start, end);
     }
@@ -438,7 +499,7 @@ class DailyX {
     public getMode(): Mode {
         var clf = new analyze.NormChangeListFilter()
             .setUser(this._user)
-            .setTimeRange(this._verRange);
+            .setTimeRange(this._verRange); // Utc
         return new ShowSessionList(clf);
     }
 
@@ -488,8 +549,10 @@ export class ShowDailyReport extends Mode {
             var clusters = cl2.getClustering();
             clusters.forEach(cluster => {
 
-                var tr = cluster.getTimeRange();
-                var trStart = bcl.TimeRange.roundToDay(tr.getStart());
+                var tr : Date = cluster.getTimeRange().getStart();
+                
+                var trStart = rountToLocalStartDay(tr);
+                //var trStart = bcl.TimeRange.roundToDay(tr);
                 var day = sortableDay(trStart).toString();
 
                 var status = d.get(user, day);
