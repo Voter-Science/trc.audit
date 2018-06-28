@@ -1,6 +1,6 @@
 import * as core from 'trc-core/core'
 import * as trcSheet from 'trc-sheet/sheet'
-import { SheetContentsIndex, SheetContents, ISheetContents } from 'trc-sheet/sheetContents';
+import { SheetContentsIndex, SheetContents, ISheetContents, ColumnNames } from 'trc-sheet/sheetContents';
 import * as bcl from 'trc-analyze/collections'
 import * as analyze from 'trc-analyze/core'
 import * as hh from 'trc-analyze/household'
@@ -110,8 +110,9 @@ function clickable(ctx: RenderContext, text: string, next: () => Mode): JQuery<H
 export class ModeDescr {
     public static List: ModeDescr[] = [
         new ModeDescr("daily", "Show a daily report for all users"),
+        new ModeDescr("stats", "Show overall summary statistics"),
         new ModeDescr("sessions", "Show active sessions for users"),
-        new ModeDescr("ndeltarange", "Show individual results"),
+        new ModeDescr("ndeltarange", "Show individual results and answers"),
         new ModeDescr("delta", "Show single raw delta"),
         new ModeDescr("deltarange", "Show range of raw deltas"),
         new ModeDescr("byrecid", "Show deltas grouped by RecId"),
@@ -165,6 +166,9 @@ export abstract class Mode {
             return new ShowDeltaRange(clf);
 
         } // sessions
+        if (kind == "stats") {
+            return new ShowFunStats(normFilter);
+        }
 
         if (kind == "sessions") {
             return new ShowSessionList(normFilter);
@@ -825,7 +829,8 @@ export class ShowNDeltaRange extends Mode {
 class DeltaRow {
     public Version: ClickableValue<number>; // Unique version number. 
     public User: string;
-    public LocalTime: string;
+    public LocalUploadTime: string;
+    public Notes : string; 
     public App: string;
     public Contents: string;
 
@@ -842,7 +847,9 @@ export class ShowDeltaRange extends Mode {
     }
 
     public getDescription(): string {
-        return "This is an advanced view and shows a specific range of 'deltas'. You can use this to drill into specific activity for sessions.";
+        return "This is an advanced view and shows a specific range of deltas based on individual upload times. " + 
+            "A single upload delta may impact multiple records. " + 
+            "You can use this to diagnose upload times. 'Notes' calls out when the upload time is different than canvas time.";
     }
 
 
@@ -861,6 +868,9 @@ export class ShowDeltaRange extends Mode {
             var btn = clickable(ctx, "View data by RecId", () => new ShowFlattenToRecId(this._clf))
             p.append(btn);
 
+            //btn = clickable(ctx, "View by client upload times.", () => new ShowNDeltaRange(this._clf))
+            //p.append(btn);
+
             ctx.element.append(p);
         }
 
@@ -873,23 +883,43 @@ export class ShowDeltaRange extends Mode {
         map.init(ncl);
 
         var tw = new TableWriter<DeltaRow>(ctx.element, ctx,
-            ["Version", "User", "LocalTime", "App", "Contents"]);
+            ["Version", "User", "LocalUploadTime", "Notes", "App", "Contents"]);
 
         cl.forEachRawDelta((delta: trcSheet.IDeltaInfo) => {
 
+            // scan if delta has 
+
             var row = new DeltaRow();
+            row.Notes = this.scan(delta);
             row.User = delta.User;
             row.App = delta.App;
             row.Version = new ClickableValue(delta.Version,
                 () => new ShowDelta(delta.Version));
 
-            row.LocalTime = new Date(delta.Timestamp).toLocaleString();
+            row.LocalUploadTime = new Date(delta.Timestamp).toLocaleString();
             row.Contents = JSON.stringify(delta.Value);
 
             tw.writeRow(row);
 
         });
 
+    }
+
+    private scan(delta: trcSheet.IDeltaInfo) : string {
+        var clientTimes = delta.Value[ColumnNames.XLastModified];
+        if (!clientTimes) {
+            return "";
+        }
+        var uploadTime = new Date(delta.Timestamp);
+        
+        for(var time of clientTimes) {
+            // get diff
+            var diff = new bcl.TimeRange(new Date(time), uploadTime); 
+            var diffS = diff.getDurationSeconds()
+            if (Math.abs(diffS) > 10 * 60) { // flag diffs greater than 10 minutes  
+                return diff.getDurationSecondsPretty() + " upload delay";
+            }
+        }
     }
 }
 
@@ -931,3 +961,80 @@ export class ShowFlattenToRecId extends Mode {
     }
 }
 
+
+class StatRow {
+    public Stat : string;
+    public Value : string;
+}
+
+export class ShowFunStats extends Mode {
+    private _clf: analyze.NormChangeListFilter; // already has filter applied!
+
+    public constructor(filter: analyze.NormChangeListFilter) {
+        super();
+        this._clf = filter;
+    }
+
+    public getDescription(): string {
+        return "This shows summary stats.";
+    }
+
+
+    public toHash(): string {
+        return "show=stats;" + this._clf.toString();
+    }
+
+    public render(ctx: RenderContext): void {
+
+        var cl = ctx.normChangelist;
+        cl = cl.applyFilter(this._clf);
+
+        // map of each user's daily activity. 
+        // (per-User, per-day) --> DailyX
+        var d = new bcl.Dict2d<DailyX>();
+
+        var totalSeconds : number = 0;
+        var totalUsers : number =0 ;
+        var totalDistanceKM = 0;
+        var totalContacts = 0;
+        var totalHouseholds = 0;
+        var totalUniqueDays = new bcl.HashCount();
+
+
+        var userCls: bcl.Dict<analyze.NormChangeList> = cl.filterByUser();
+        userCls.forEach((user, cl2) => {
+            totalUsers++;
+
+            var clusters = cl2.getClustering();
+            clusters.forEach(cluster => {
+
+                totalSeconds += cluster.getDurationSeconds();
+                var x = cluster.getTotalDist();
+                if (x) {
+                    totalDistanceKM  += x;
+                }
+                totalContacts += cluster.getUniqueCount();
+                totalHouseholds += cluster.getUniqueHouseholdCount(ctx.householder);
+
+                var tr: Date = cluster.getTimeRange().getStart();
+
+
+                var trStart = rountToLocalStartDay(tr);
+                //var trStart = bcl.TimeRange.roundToDay(tr);
+                var day = sortableDay(trStart).toString();
+
+                totalUniqueDays.Add(day);           
+            });
+        });
+
+        var tw = new TableWriter<StatRow>(ctx.element, ctx);
+        tw.writeRow( { Stat : "Total Active Time", Value : bcl.TimeRange.prettyPrintSeconds(totalSeconds)});
+        tw.writeRow( { Stat : "Total users", Value : totalUsers.toString() });
+        tw.writeRow( { Stat : "Total Distance Walked (km)", Value : totalDistanceKM.toFixed(2)})
+        var distMile = totalDistanceKM / 0.62137119; 
+        tw.writeRow( { Stat : "Total Distance Walked (Miles)", Value : distMile.toFixed(2)});
+        tw.writeRow( { Stat : "Total Contacts", Value : totalContacts.toString() });
+        tw.writeRow( { Stat : "Total Households", Value : totalHouseholds.toString()});
+        tw.writeRow( { Stat : "Total unique days", Value : totalUniqueDays.toString()});
+    }
+}
