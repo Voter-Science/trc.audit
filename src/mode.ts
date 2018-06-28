@@ -640,6 +640,47 @@ export class ShowDailyReport extends Mode {
     }
 }
 
+// Track group  of individual responses, per-question. 
+class Responses {
+    public Name: string; // ColumnName 
+
+    // Histogram 
+    // Answer --> Count of Answer.
+    public _counts = new bcl.Dict<number>();
+
+
+    // Build up a list of responses
+    // Dictionary is Question --> Hist of Responses. 
+    public static Build(normChangelist: analyze.NormChangeList): bcl.Dict<Responses> {
+        var d = new bcl.Dict<Responses>();
+
+        normChangelist.forEach(item => {
+            item.forEach((columnName, newValue) => {
+
+                var response = d.get(columnName);
+                if (!response) {
+                    response = new Responses();
+                    response.Name = columnName;
+                    d.add(columnName, response);
+                }
+
+                var c = response._counts.get(newValue);
+                if (!c) {
+                    c = 0;
+                }
+                c++;
+                response._counts.add(newValue, c);
+            });
+        });
+        return d;
+    }
+}
+
+
+class ResponseTableRow {
+    public Answer: string;
+    public Count: number;
+}
 // Rows for the show=deltarange
 class NDeltaRow {
     public Version: ClickableValue<string>; // Jump to delta
@@ -687,12 +728,57 @@ export class ShowNDeltaRange extends Mode {
         var m = new MapHelper();
         m.init(cl);
 
+
+        var placeNoteHere: JQuery<HTMLElement>;
+        {
+            var responses = Responses.Build(cl);
+
+            var summaryHeading = $("<h3>").text("Response Summary");
+            ctx.element.append(summaryHeading);
+
+            placeNoteHere = $("<div>");
+            ctx.element.append(placeNoteHere);
+
+            responses.forEach((columnName, response) => {
+
+
+
+                //ctx.element.append($("<p>").text(columnName));
+                var panel = $("<div>").addClass("panel").addClass("panel-default");
+                var panelH = $("<div>").addClass("panel-heading").text(columnName);
+                var panelBody = $("<div>").addClass("panel-body");
+                panel.append(panelH).append(panelBody);
+
+                var tw = new TableWriter<ResponseTableRow>(panelBody, ctx);
+
+                var total = 0;
+                response._counts.forEach((answer, count) => {
+                    var row = new ResponseTableRow();
+                    row.Answer = answer;
+                    row.Count = count;
+                    total += count;
+                    tw.writeRow(row);
+                });
+
+                var row = new ResponseTableRow();
+                row.Answer = "TOTAL";
+                row.Count = total;
+                tw.writeRow(row);
+
+
+                ctx.element.append(panel);
+            });
+        }
+
+        ctx.element.append($("<h3>").text("Individual Answers"));
+
         var tw = new TableWriter<NDeltaRow>(ctx.element, ctx,
             ["Version", "RecId", "HouseholdId", "User", "LocalTime", "App", "Contents"]);
 
+        var totalTime: bcl.TimeRange;
         var count = new bcl.HashCount();
         var countHH = new bcl.HashCount();
-        cl.forEach((item) => {            
+        cl.forEach((item) => {
             var row = new NDeltaRow();
             row.RecId = item.recId;
             row.HouseholdId = ctx.householder.getHHID(item.recId);
@@ -708,6 +794,12 @@ export class ShowNDeltaRange extends Mode {
 
             row.LocalTime = item.xtimestamp.toLocaleString();
 
+            if (!totalTime) {
+                totalTime = new bcl.TimeRange(item.xtimestamp, item.xtimestamp);
+            }
+            totalTime.expandToInclude(item.xtimestamp);
+
+
             var x = "";
             item.forEach((columnName, newValue) => {
                 x += columnName + "=" + newValue + "; ";
@@ -716,8 +808,15 @@ export class ShowNDeltaRange extends Mode {
             tw.writeRow(row);
         });
 
-        var note = $("<p>").text(count.toString() + " total voters. " + countHH + " households.");
-        ctx.element.prepend(note);
+        var totalTimeStr = "0";
+        if (!!totalTime) {
+            totalTimeStr = totalTime.getDurationSecondsPretty();
+        }
+        var note = $("<p>").text(
+            count.toString() + " total voters. " +
+            countHH + " households. " +
+            totalTimeStr + " total time.");
+        placeNoteHere.append(note);
 
     }
 }
