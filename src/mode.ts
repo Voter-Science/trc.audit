@@ -47,25 +47,25 @@ function sortableDay(x: Date): number {
 }
 
 // Round a date to the start date in local time. 
-function rountToLocalStartDay(d : Date) : Date {
+function rountToLocalStartDay(d: Date): Date {
 
     var year = d.getFullYear(); // 2018 
     var month = d.getMonth(); // 0-based; but Date ctor is also 0-based
     var date = d.getDate(); //  1-based 
 
-    return new Date(year, month, date );
+    return new Date(year, month, date);
 
-/*
-    const p = 24 * 60 * 60 * 1000; // milliseconds in a day 
-
-    var t = d.getTime(); // Milliseconds  since UTC
-
-    var start = Math.round(t / p) * p; // start of UTC day
-
-    var minutes = d.getTimezoneOffset(); //  minutes, ie 420 = 7 hours. 
-    start += minutes *60 *1000; // adjust to local time
+    /*
+        const p = 24 * 60 * 60 * 1000; // milliseconds in a day 
     
-    return new Date(start);*/
+        var t = d.getTime(); // Milliseconds  since UTC
+    
+        var start = Math.round(t / p) * p; // start of UTC day
+    
+        var minutes = d.getTimezoneOffset(); //  minutes, ie 420 = 7 hours. 
+        start += minutes *60 *1000; // adjust to local time
+        
+        return new Date(start);*/
 }
 
 /*
@@ -111,14 +111,14 @@ export class ModeDescr {
     public static List: ModeDescr[] = [
         new ModeDescr("daily", "Show a daily report for all users"),
         new ModeDescr("sessions", "Show active sessions for users"),
-        new ModeDescr("ndeltarange", "Show specific inputs per session"),
+        new ModeDescr("ndeltarange", "Show individual results"),
         new ModeDescr("delta", "Show single raw delta"),
         new ModeDescr("deltarange", "Show range of raw deltas"),
         new ModeDescr("byrecid", "Show deltas grouped by RecId"),
     ];
 
-    public static lookup(name : string) : ModeDescr {
-        for(var descr of ModeDescr.List) {
+    public static lookup(name: string): ModeDescr {
+        for (var descr of ModeDescr.List) {
             if (descr._hashName == name) {
                 return descr;
             }
@@ -131,13 +131,13 @@ export class ModeDescr {
 
     public useVerNum(): boolean {
         return this._hashName == "delta";
-     }
-     public useUsers() : boolean { 
+    }
+    public useUsers(): boolean {
         return this._hashName != "delta";
-     }
-     public useTimeRange() : boolean { 
+    }
+    public useTimeRange(): boolean {
         return this._hashName != "delta";
-     }
+    }
 
     constructor(hashName: string, descr: string) {
         this._hashName = hashName;
@@ -416,6 +416,13 @@ export class ShowSessionList extends Mode {
         var users = cl.filterByUser();
         var table = new TableWriter<SessionRow>(ctx.element, ctx);
 
+        var totals: SessionRow = new SessionRow();
+        totals.User = "Total";
+        totals.VoterCount = 0;
+        totals.HouseholdCount = 0;
+        totals.Distance = 0;
+        totals.TotalMinutes = 0;
+
         users.forEach((user, cl) => {
             var clusters = cl.getClustering();
 
@@ -474,9 +481,18 @@ export class ShowSessionList extends Mode {
                 lastTime = cluster.getTimeRange().getEnd();
                 lastLoc = cluster.getGeoEnd();
 
+                totals.VoterCount += row.VoterCount;
+                totals.HouseholdCount += row.HouseholdCount;
+                totals.Distance += row.Distance;
+                totals.TotalMinutes += row.TotalMinutes;
+
                 table.writeRow(row);
             });
         });
+
+        // Add total
+        totals.TotalDuration = bcl.TimeRange.prettyPrintSeconds(totals.TotalMinutes * 60);
+        table.writeRow(totals);
     }
 }
 
@@ -549,8 +565,8 @@ export class ShowDailyReport extends Mode {
             var clusters = cl2.getClustering();
             clusters.forEach(cluster => {
 
-                var tr : Date = cluster.getTimeRange().getStart();
-                
+                var tr: Date = cluster.getTimeRange().getStart();
+
                 var trStart = rountToLocalStartDay(tr);
                 //var trStart = bcl.TimeRange.roundToDay(tr);
                 var day = sortableDay(trStart).toString();
@@ -573,15 +589,21 @@ export class ShowDailyReport extends Mode {
         days = days.sort();
 
         var columnNames = ["User"].concat(days);
+        columnNames.push("Total");
 
         var tw = new TableWriter<any>(ctx.element, ctx, columnNames);
 
-        var totals = new bcl.Dict<number>(); // total per-day 
-        days.forEach(day => { totals.add(day, 0); });
+        var grandTotal = 0;
+        var totalsPerUser = new bcl.Dict<number>();
+        var totalsPerDay = new bcl.Dict<number>(); // total per-day 
+        days.forEach(day => { totalsPerDay.add(day, 0); }); // initial add
+        users.forEach(user => { totalsPerUser.add(user, 0); }); // initial add
 
         users.forEach(user => {
             var row: any = {};
             row.User = user;
+
+            var totalPerUser = 0;
             days.forEach(day => {
                 var cell = d.get(user, day);
                 var min = 0;
@@ -591,22 +613,29 @@ export class ShowDailyReport extends Mode {
                     min = cell.getMinutes();
                     row[day] = new ClickableValue(cell.toString(), () => cell.getMode());
                 }
-                var t = totals.get(day);
+
+                totalPerUser += min;
+                grandTotal += min;
+
+                var t = totalsPerDay.get(day);
                 t += min;
-                totals.add(day, t);
+                totalsPerDay.add(day, t);
 
             });
+            totalsPerUser.add(user, totalPerUser);
+            row.Total = totalPerUser;
 
             tw.writeRow(row);
         });
 
-        // Totals 
+        // Add a final row for Totals.
         var row: any = {};
         row.User = "TOTAL";
         days.forEach(day => {
-            var t = totals.get(day);
+            var t = totalsPerDay.get(day);
             row[day] = t;
         });
+        row.Total = grandTotal;
         tw.writeRow(row);
     }
 }
@@ -661,13 +690,17 @@ export class ShowNDeltaRange extends Mode {
         var tw = new TableWriter<NDeltaRow>(ctx.element, ctx,
             ["Version", "RecId", "HouseholdId", "User", "LocalTime", "App", "Contents"]);
 
-        cl.forEach((item) => {
-
+        var count = new bcl.HashCount();
+        var countHH = new bcl.HashCount();
+        cl.forEach((item) => {            
             var row = new NDeltaRow();
             row.RecId = item.recId;
             row.HouseholdId = ctx.householder.getHHID(item.recId);
             row.User = item.getUser();
             row.App = item.getApp();
+
+            count.Add(row.RecId);
+            countHH.Add(row.HouseholdId);
 
             var verstr = item.delta.Version + "-" + item.deltaIdx;
             row.Version = new ClickableValue(verstr,
@@ -682,6 +715,9 @@ export class ShowNDeltaRange extends Mode {
             row.Contents = x;
             tw.writeRow(row);
         });
+
+        var note = $("<p>").text(count.toString() + " total voters. " + countHH + " households.");
+        ctx.element.prepend(note);
 
     }
 }
@@ -796,19 +832,3 @@ export class ShowFlattenToRecId extends Mode {
     }
 }
 
-/*
-// Shows a single delta 
-export class ShowAllVers extends Mode 
-{
-    public render(ctx : Context) : void {
-        // Apply filters 
-        var sc = ctx.changelist.normalizeByVer();
-
-
-        addNormalizedDay(sc, "Timestamp", "DayNumber");
-
-        var r = new trchtml.RenderSheet("contents", sc);
-        r.render();
-    }
-}
-*/
