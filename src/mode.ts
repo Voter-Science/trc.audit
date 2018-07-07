@@ -36,6 +36,9 @@ declare var google: any;
 // Daily Report:  Group clusters by day . data[User][Day] = # of active mintues.
 //   Show=UsersDaily
 
+function round2(n : number) : number {
+    return Math.round(n * 100) / 100;
+}
 
 // convert a date into a sortable integer. 
 // YYYYMMDD
@@ -112,6 +115,7 @@ export class ModeDescr {
         new ModeDescr("daily", "Show a daily report for all users"),
         new ModeDescr("stats", "Show overall summary statistics"),
         new ModeDescr("sessions", "Show active sessions for users"),
+        new ModeDescr("answersummary", "Show summary of answers"),
         new ModeDescr("ndeltarange", "Show individual results and answers"),
         new ModeDescr("delta", "Show single raw delta"),
         new ModeDescr("deltarange", "Show range of raw deltas"),
@@ -176,6 +180,10 @@ export abstract class Mode {
 
         if (kind == "ndeltarange") {
             return new ShowNDeltaRange(normFilter);
+        }
+
+        if (kind == "answersummary") {
+            return new ShowAnswerSummary(normFilter);
         }
 
         // Flatten by RecId, like Blame report. 
@@ -337,7 +345,7 @@ class MapHelper {
             var randomColor = '#' + ('000000' + Math.floor(Math.random() * 16777215).toString(16)).slice(-6);
 
             var user: string = users[i];
-            var userCl = userCls.get(user);
+            var userCl :analyze.NormChangeList = userCls.get(user);
 
             // path is array of {lat,lng}
             var path: any = [];
@@ -438,7 +446,7 @@ export class ShowSessionList extends Mode {
                 var row = new SessionRow();
                 row.User = user;
                 row.VoterCount = cluster.getUniqueCount();
-
+                
                 var verStart = cluster.getTimeRange().getStart();
                 //var verEnd = cluster.getTimeRange().getEnd();
                 row.VerStart = new ClickableValue<number>(verStart.valueOf(),
@@ -465,12 +473,12 @@ export class ShowSessionList extends Mode {
                 row.TotalMinutes = Math.round(tr.getDurationSeconds() / 60);
                 row.TotalDuration = bcl.TimeRange.prettyPrintSeconds(cluster.getTimeRange().getDurationSeconds());
 
-                row.Distance = cluster.getTotalDist();
+                row.Distance = round2(cluster.getTotalDist());
                 row.HouseholdCount = cluster.getUniqueHouseholdCount(ctx.householder);
 
                 // Record gaps between sessions
                 if (!!lastLoc) {
-                    row.GapDistanceKM = bcl.GeoHelper.getDistanceFromLatLonInKm(lastLoc, cluster.getGeoStart());
+                    row.GapDistanceKM = round2(bcl.GeoHelper.getDistanceFromLatLonInKm(lastLoc, cluster.getGeoStart()));
                 } else {
                     row.GapDistanceKM = NaN;
                 }
@@ -504,14 +512,15 @@ export class ShowSessionList extends Mode {
 class DailyX {
     private _seconds: number = 0;
 
-    private _verRange: bcl.TimeRange;
+    private readonly _verRange: bcl.TimeRange;
     private readonly _user: string;
 
     public constructor(user?: string, day?: Date) {
         this._user = user;
 
         if (!day) {
-            // leave verRange empty;
+            // This will get expanded by calls to Aggregate
+            this._verRange = bcl.TimeRange.NewEmpty();
             return;
         }
         var start = rountToLocalStartDay(day);
@@ -530,16 +539,7 @@ class DailyX {
     // Aggregate from existing cells (used for row, column summaries)
     public aggregate(other: DailyX): void {
         // Ignore user. 
-        // $$$ would be very convenient to have an "empty" verrange and not always need this checks. 
-        if (!this._verRange) 
-        {
-            this._verRange = new bcl.TimeRange(other._verRange.getStart(), other._verRange.getEnd());
-        } else 
-        {
-            this._verRange.expandToInclude(other._verRange.getStart());
-            this._verRange.expandToInclude(other._verRange.getEnd());
-        }
-
+        this._verRange.expandToInclude(other._verRange);
         this._seconds += other._seconds;
     }
 
@@ -675,6 +675,13 @@ class Responses {
     // Answer --> Count of Answer.
     public _counts = new bcl.Dict<number>();
 
+    public getTotal() : number {
+        var total = 0;
+        this._counts.forEach((answer, count) => {
+            total += count;
+        });
+        return total;
+    }
 
     // Build up a list of responses
     // Dictionary is Question --> Hist of Responses. 
@@ -707,6 +714,7 @@ class Responses {
 class ResponseTableRow {
     public Answer: string;
     public Count: number;
+    public Percentage : string;
 }
 // Rows for the show=deltarange
 class NDeltaRow {
@@ -766,10 +774,8 @@ export class ShowNDeltaRange extends Mode {
             placeNoteHere = $("<div>");
             ctx.element.append(placeNoteHere);
 
+            /* Share with answersummary
             responses.forEach((columnName, response) => {
-
-
-
                 //ctx.element.append($("<p>").text(columnName));
                 var panel = $("<div>").addClass("panel").addClass("panel-default");
                 var panelH = $("<div>").addClass("panel-heading").text(columnName);
@@ -795,6 +801,7 @@ export class ShowNDeltaRange extends Mode {
 
                 ctx.element.append(panel);
             });
+            */
         }
 
         ctx.element.append($("<h3>").text("Individual Answers"));
@@ -802,7 +809,7 @@ export class ShowNDeltaRange extends Mode {
         var tw = new TableWriter<NDeltaRow>(ctx.element, ctx,
             ["Version", "RecId", "HouseholdId", "User", "LocalTime", "App", "Contents"]);
 
-        var totalTime: bcl.TimeRange;
+        var totalTime = bcl.TimeRange.NewEmpty();
         var count = new bcl.HashCount();
         var countHH = new bcl.HashCount();
         cl.forEach((item) => {
@@ -821,9 +828,6 @@ export class ShowNDeltaRange extends Mode {
 
             row.LocalTime = item.xtimestamp.toLocaleString();
 
-            if (!totalTime) {
-                totalTime = new bcl.TimeRange(item.xtimestamp, item.xtimestamp);
-            }
             totalTime.expandToInclude(item.xtimestamp);
 
 
@@ -835,10 +839,7 @@ export class ShowNDeltaRange extends Mode {
             tw.writeRow(row);
         });
 
-        var totalTimeStr = "0";
-        if (!!totalTime) {
-            totalTimeStr = totalTime.getDurationSecondsPretty();
-        }
+        var totalTimeStr = totalTime.getDurationSecondsPretty();        
         var note = $("<p>").text(
             count.toString() + " total voters. " +
             countHH + " households. " +
@@ -847,6 +848,78 @@ export class ShowNDeltaRange extends Mode {
 
     }
 }
+
+
+// Show normalizedSummary of answers 
+export class ShowAnswerSummary extends Mode {
+    private _clf: analyze.NormChangeListFilter; // already has filter applied!
+
+    public constructor(filter: analyze.NormChangeListFilter) {
+        super();
+        this._clf = filter;
+    }
+
+    public getDescription(): string {
+        return "This shows a summary of the results.";
+    }
+
+
+    public toHash(): string {
+        return "show=answersummary;" + this._clf.toString();
+    }
+
+    public render(ctx: RenderContext): void {
+
+        var cl = ctx.normChangelist;
+        cl = cl.applyFilter(this._clf);
+
+        //var m = new MapHelper();
+        //m.init(cl);
+
+
+        var placeNoteHere: JQuery<HTMLElement>;
+        {
+            var responses = Responses.Build(cl);
+
+            var summaryHeading = $("<h3>").text("Response Summary");
+            ctx.element.append(summaryHeading);
+
+            placeNoteHere = $("<div>");
+            ctx.element.append(placeNoteHere);
+
+            responses.forEach((columnName, response) => {
+                //ctx.element.append($("<p>").text(columnName));
+                var panel = $("<div>").addClass("panel").addClass("panel-default");
+                var panelH = $("<div>").addClass("panel-heading").text(columnName);
+                var panelBody = $("<div>").addClass("panel-body");
+                panel.append(panelH).append(panelBody);
+
+                var tw = new TableWriter<ResponseTableRow>(panelBody, ctx);
+
+                var total = response.getTotal();
+
+                var rows : ResponseTableRow[] =  [];
+                response._counts.forEach((answer, count) => {
+                    var row = new ResponseTableRow();
+                    row.Answer = answer;
+                    row.Count = count;
+                    row.Percentage = bcl.Counter.GetPercentage(count, total);
+                    rows.push(row);
+                });
+                rows.sort((a,b) => b.Count - a.Count);
+                rows.forEach(row => tw.writeRow(row));
+
+                var row = new ResponseTableRow();
+                row.Answer = "TOTAL";
+                row.Count = total;
+                tw.writeRow(row);
+
+                ctx.element.append(panel);
+            });
+        }
+    }
+}
+
 
 // Rows for the show=deltarange
 class DeltaRow {
