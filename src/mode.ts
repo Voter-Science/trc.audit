@@ -504,12 +504,16 @@ export class ShowSessionList extends Mode {
 class DailyX {
     private _seconds: number = 0;
 
-    private readonly _verRange: bcl.TimeRange;
+    private _verRange: bcl.TimeRange;
     private readonly _user: string;
 
-    public constructor(user: string, day: Date) {
+    public constructor(user?: string, day?: Date) {
         this._user = user;
 
+        if (!day) {
+            // leave verRange empty;
+            return;
+        }
         var start = rountToLocalStartDay(day);
         var end = new Date(start.getTime() + 60 * 60 * 24 * 1000 - 1); // last MS of the day 
         this._verRange = new bcl.TimeRange(start, end);
@@ -523,6 +527,23 @@ class DailyX {
         return new ShowSessionList(clf);
     }
 
+    // Aggregate from existing cells (used for row, column summaries)
+    public aggregate(other: DailyX): void {
+        // Ignore user. 
+        // $$$ would be very convenient to have an "empty" verrange and not always need this checks. 
+        if (!this._verRange) 
+        {
+            this._verRange = new bcl.TimeRange(other._verRange.getStart(), other._verRange.getEnd());
+        } else 
+        {
+            this._verRange.expandToInclude(other._verRange.getStart());
+            this._verRange.expandToInclude(other._verRange.getEnd());
+        }
+
+        this._seconds += other._seconds;
+    }
+
+    // Build up from clusters. 
     public build(cluster: analyze.Cluster): void {
         this._seconds += cluster.getDurationSeconds();
     }
@@ -560,9 +581,9 @@ export class ShowDailyReport extends Mode {
         var cl = ctx.normChangelist;
         cl = cl.applyFilter(this._clf);
 
-        // map of each user's daily activity. 
-        // (per-User, per-day) --> DailyX
-        var d = new bcl.Dict2d<DailyX>();
+        // map of each user's daily activity.         
+        var perUserPerDay = new bcl.Dict2d<DailyX>(); // (per-User, per-day) --> DailyX
+
 
         var userCls: bcl.Dict<analyze.NormChangeList> = cl.filterByUser();
         userCls.forEach((user, cl2) => {
@@ -575,12 +596,12 @@ export class ShowDailyReport extends Mode {
                 //var trStart = bcl.TimeRange.roundToDay(tr);
                 var day = sortableDay(trStart).toString();
 
-                var status = d.get(user, day);
+                var status = perUserPerDay.get(user, day);
                 if (!status) {
                     status = new DailyX(user, trStart);
                 }
                 status.build(cluster);
-                d.add(user, day, status);
+                perUserPerDay.add(user, day, status);
             });
         });
 
@@ -588,46 +609,48 @@ export class ShowDailyReport extends Mode {
         // Columns are Dates. 
         // Rows are people. 
 
-        var users = d.getKey1s();
-        var days = d.getKey2s();
+        var users = perUserPerDay.getKey1s();
+        var days = perUserPerDay.getKey2s();
         days = days.sort();
 
-        var columnNames = ["User"].concat(days);
+
+        // Write out table 
+        // Also calculates totals 
+        var columnNames = ["User"].concat(days); // columns to display in the table, in-order.
         columnNames.push("Total");
 
         var tw = new TableWriter<any>(ctx.element, ctx, columnNames);
 
-        var grandTotal = 0;
-        var totalsPerUser = new bcl.Dict<number>();
-        var totalsPerDay = new bcl.Dict<number>(); // total per-day 
-        days.forEach(day => { totalsPerDay.add(day, 0); }); // initial add
-        users.forEach(user => { totalsPerUser.add(user, 0); }); // initial add
+        var grandTotal = new DailyX();
+        var totalsPerDay = new bcl.Dict<DailyX>();
+        days.forEach(day => { totalsPerDay.add(day, new DailyX()); }); // initial add
 
         users.forEach(user => {
             var row: any = {};
             row.User = user;
 
-            var totalPerUser = 0;
+            var totalPerUser = new DailyX(user);
+
             days.forEach(day => {
-                var cell = d.get(user, day);
+                var cell: DailyX = perUserPerDay.get(user, day);
                 var min = 0;
                 if (!cell) {
                     row[day] = "";
                 } else {
                     min = cell.getMinutes();
-                    row[day] = new ClickableValue(cell.toString(), () => cell.getMode());
+                    row[day] = new ClickableValue(cell, () => cell.getMode());
+
+                    // Calculate totals 
+                    grandTotal.aggregate(cell);
+
+                    var t = totalsPerDay.get(day);
+                    t.aggregate(cell);
+
+                    totalPerUser.aggregate(cell);
                 }
-
-                totalPerUser += min;
-                grandTotal += min;
-
-                var t = totalsPerDay.get(day);
-                t += min;
-                totalsPerDay.add(day, t);
-
             });
-            totalsPerUser.add(user, totalPerUser);
-            row.Total = totalPerUser;
+
+            row.Total = new ClickableValue(totalPerUser, () => totalPerUser.getMode());
 
             tw.writeRow(row);
         });
@@ -637,9 +660,9 @@ export class ShowDailyReport extends Mode {
         row.User = "TOTAL";
         days.forEach(day => {
             var t = totalsPerDay.get(day);
-            row[day] = t;
+            row[day] = new ClickableValue(t, () => t.getMode());
         });
-        row.Total = grandTotal;
+        row.Total = new ClickableValue(grandTotal, () => new ShowSessionList(this._clf));
         tw.writeRow(row);
     }
 }
@@ -830,7 +853,7 @@ class DeltaRow {
     public Version: ClickableValue<number>; // Unique version number. 
     public User: string;
     public LocalUploadTime: string;
-    public Notes : string; 
+    public Notes: string;
     public App: string;
     public Contents: string;
 
@@ -847,8 +870,8 @@ export class ShowDeltaRange extends Mode {
     }
 
     public getDescription(): string {
-        return "This is an advanced view and shows a specific range of deltas based on individual upload times. " + 
-            "A single upload delta may impact multiple records. " + 
+        return "This is an advanced view and shows a specific range of deltas based on individual upload times. " +
+            "A single upload delta may impact multiple records. " +
             "You can use this to diagnose upload times. 'Notes' calls out when the upload time is different than canvas time.";
     }
 
@@ -905,16 +928,16 @@ export class ShowDeltaRange extends Mode {
 
     }
 
-    private scan(delta: trcSheet.IDeltaInfo) : string {
+    private scan(delta: trcSheet.IDeltaInfo): string {
         var clientTimes = delta.Value[ColumnNames.XLastModified];
         if (!clientTimes) {
             return "";
         }
         var uploadTime = new Date(delta.Timestamp);
-        
-        for(var time of clientTimes) {
+
+        for (var time of clientTimes) {
             // get diff
-            var diff = new bcl.TimeRange(new Date(time), uploadTime); 
+            var diff = new bcl.TimeRange(new Date(time), uploadTime);
             var diffS = diff.getDurationSeconds()
             if (Math.abs(diffS) > 10 * 60) { // flag diffs greater than 10 minutes  
                 return diff.getDurationSecondsPretty() + " upload delay";
@@ -963,8 +986,8 @@ export class ShowFlattenToRecId extends Mode {
 
 
 class StatRow {
-    public Stat : string;
-    public Value : string;
+    public Stat: string;
+    public Value: string;
 }
 
 export class ShowFunStats extends Mode {
@@ -993,8 +1016,8 @@ export class ShowFunStats extends Mode {
         // (per-User, per-day) --> DailyX
         var d = new bcl.Dict2d<DailyX>();
 
-        var totalSeconds : number = 0;
-        var totalUsers : number =0 ;
+        var totalSeconds: number = 0;
+        var totalUsers: number = 0;
         var totalDistanceKM = 0;
         var totalContacts = 0;
         var totalHouseholds = 0;
@@ -1011,7 +1034,7 @@ export class ShowFunStats extends Mode {
                 totalSeconds += cluster.getDurationSeconds();
                 var x = cluster.getTotalDist();
                 if (x) {
-                    totalDistanceKM  += x;
+                    totalDistanceKM += x;
                 }
                 totalContacts += cluster.getUniqueCount();
                 totalHouseholds += cluster.getUniqueHouseholdCount(ctx.householder);
@@ -1023,18 +1046,18 @@ export class ShowFunStats extends Mode {
                 //var trStart = bcl.TimeRange.roundToDay(tr);
                 var day = sortableDay(trStart).toString();
 
-                totalUniqueDays.Add(day);           
+                totalUniqueDays.Add(day);
             });
         });
 
         var tw = new TableWriter<StatRow>(ctx.element, ctx);
-        tw.writeRow( { Stat : "Total Active Time", Value : bcl.TimeRange.prettyPrintSeconds(totalSeconds)});
-        tw.writeRow( { Stat : "Total users", Value : totalUsers.toString() });
-        tw.writeRow( { Stat : "Total Distance Walked (km)", Value : totalDistanceKM.toFixed(2)})
-        var distMile = totalDistanceKM / 0.62137119; 
-        tw.writeRow( { Stat : "Total Distance Walked (Miles)", Value : distMile.toFixed(2)});
-        tw.writeRow( { Stat : "Total Contacts", Value : totalContacts.toString() });
-        tw.writeRow( { Stat : "Total Households", Value : totalHouseholds.toString()});
-        tw.writeRow( { Stat : "Total unique days", Value : totalUniqueDays.toString()});
+        tw.writeRow({ Stat: "Total Active Time", Value: bcl.TimeRange.prettyPrintSeconds(totalSeconds) });
+        tw.writeRow({ Stat: "Total users", Value: totalUsers.toString() });
+        tw.writeRow({ Stat: "Total Distance Walked (km)", Value: totalDistanceKM.toFixed(2) })
+        var distMile = totalDistanceKM / 0.62137119;
+        tw.writeRow({ Stat: "Total Distance Walked (Miles)", Value: distMile.toFixed(2) });
+        tw.writeRow({ Stat: "Total Contacts", Value: totalContacts.toString() });
+        tw.writeRow({ Stat: "Total Households", Value: totalHouseholds.toString() });
+        tw.writeRow({ Stat: "Total unique days", Value: totalUniqueDays.toString() });
     }
 }
