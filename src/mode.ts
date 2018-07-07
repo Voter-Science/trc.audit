@@ -36,7 +36,7 @@ declare var google: any;
 // Daily Report:  Group clusters by day . data[User][Day] = # of active mintues.
 //   Show=UsersDaily
 
-function round2(n : number) : number {
+function round2(n: number): number {
     return Math.round(n * 100) / 100;
 }
 
@@ -234,8 +234,11 @@ export class ShowDelta extends Mode {
     }
 }
 
+interface IRenderCell {
+    render(ctx: RenderContext): JQuery<HTMLElement>;
+}
 // For setting in Table rows 
-class ClickableValue<T> {
+class ClickableValue<T> implements IRenderCell {
     public _next: () => Mode; // What happens when we click
     public _value: T;
     public constructor(value: T, next: () => Mode) {
@@ -244,13 +247,39 @@ class ClickableValue<T> {
     }
 
     public toString() { return this._value.toString(); };
+
+    public render(ctx: RenderContext): JQuery<HTMLElement> {
+        return clickable(ctx,
+            this._value.toString(),
+            this._next);
+    }
+}
+
+// For displaying a color in Table rows 
+class ColorValue implements IRenderCell {
+    public _color: string;
+    public _next: () => void; // What happens when we click
+
+    public constructor(color: string, next: () => void) {
+        this._color = color;
+        this._next = next;
+    }
+
+    public toString() { return this._color; };
+
+    public render(ctx: RenderContext): JQuery<HTMLElement> {
+        return $("<span>").text("View").css("background-color", this._color).click(() => {
+            this._next();
+        });
+    }
 }
 
 class SessionRow {
     public User: string;
+    public ViewOnMap: ColorValue;
     public VoterCount: number;
     public VerStart: ClickableValue<number>;
-    //public VerEnd: number;
+    public VerEnd: number;
     public DayNumber: number;
     public Day: string;
     public StartTime: string;
@@ -306,13 +335,12 @@ class TableWriter<T> {
 
             var val: any = (<any>row)[columnName];
             if (!!val) {
-                var next = val._next;
-                if (next) {
-                    // clicabkle
-                    td = td.append(
-                        clickable(this._ctx,
-                            val.toString(),
-                            next));
+                // Runtime type check: https://stackoverflow.com/a/14426274
+                var asRenderCell = <IRenderCell>(val);
+                if (!!asRenderCell.render) {
+                    // ClickableValue
+                    var inner = asRenderCell.render(this._ctx);
+                    td = td.append(inner);
                 } else {
                     td.text(val);
                 }
@@ -326,16 +354,35 @@ class TableWriter<T> {
     }
 }
 
+// Describe something we added onto the map.
+// Provides a handle back to the caller.
+class MapGlyph {
+    private readonly _parent: MapHelper;
+    private readonly _bounds = new google.maps.LatLngBounds();
+
+    public constructor(parent : MapHelper)  {
+        this._parent = parent;
+    }
+
+    public setFocus(): void {
+        this._parent._map.fitBounds(this._bounds);       // auto-zoom
+        this._parent._map.panToBounds(this._bounds);     // auto-center
+    }
+
+    public _extend(pst: any): void {
+        this._bounds.extend(pst);
+    }
+}
+
 class MapHelper {
 
-    private readonly _map : any;
+    public readonly _map: any;
+
+    // Track bounds for all items. 
     private readonly _bounds = new google.maps.LatLngBounds();
     private readonly _ctx: RenderContext;
 
-    // private _colors : bcl.Dict<string> = new bcl.Dict<string>();
-
-    public constructor(ctx? : RenderContext) 
-    {
+    public constructor(ctx?: RenderContext) {
         this._ctx = ctx;
         $("#map").show();
         this._map = new google.maps.Map(document.getElementById('map'));
@@ -343,13 +390,15 @@ class MapHelper {
 
     // Draw the specific cluster on the map. 
     // When the cluster is clicked, go to the next() mode. 
-    public addCluster(cluster : analyze.Cluster,
-        next: () => Mode): void {
-        
+    public addCluster(cluster: analyze.Cluster,
+        color : string, // color to draw cluster in
+        onClickOnLine: () => Mode): MapGlyph {
+
+        var glyph = new MapGlyph(this);
+
         // path is array of {lat,lng}
         var path: any = [];
 
-        var randomColor = this.getRandomColor();
         cluster.forEach(item => {
             var user = item.getUser();
 
@@ -361,32 +410,36 @@ class MapHelper {
 
             path.push({ lat: item.xloc.Lat, lng: item.xloc.Long });
             this._bounds.extend(pst);
+            glyph._extend(pst);
         });
 
         var flightPath = new google.maps.Polyline({
             path: path,
             geodesic: true,
-            strokeColor: randomColor,
+            strokeColor: color,
             strokeOpacity: 1.0,
             strokeWeight: 3
         });
         google.maps.event.addListener(flightPath, 'click', () => {
-            var m = next();
+            var m = onClickOnLine();
             this._ctx.Next(m);
         });
         flightPath.setMap(this._map);
-    
+
+        return glyph;
     }
 
     // Does final panning and zoom 
-    public done() : void {
+    public done(): void {
         this._map.fitBounds(this._bounds);       // auto-zoom
         this._map.panToBounds(this._bounds);     // auto-center
     }
 
-    public getRandomColor() : string {
+    public getRandomColor(): string {
+        // $$$ the naive random values produce a clustering of dark colors.
+        // See a lib like this for more attracitve colors:  https://github.com/davidmerfield/RandomColor
         var randomColor = '#' + ('000000' + Math.floor(Math.random() * 16777215).toString(16)).slice(-6);
-        return randomColor;
+        return randomColor;        
 
     }
 
@@ -405,7 +458,7 @@ class MapHelper {
             var randomColor = this.getRandomColor();
 
             var user: string = users[i];
-            var userCl :analyze.NormChangeList = userCls.get(user);
+            var userCl: analyze.NormChangeList = userCls.get(user);
 
             // path is array of {lat,lng}
             var path: any = [];
@@ -500,27 +553,33 @@ export class ShowSessionList extends Mode {
 
             clusters.forEach(cluster => {
 
-               
+
 
                 var row = new SessionRow();
                 row.User = user;
                 row.VoterCount = cluster.getUniqueCount();
-                
-                var verStart = cluster.getTimeRange().getStart();
-                //var verEnd = cluster.getTimeRange().getEnd();
 
-                var onClick =  () => {
-                    // Clicking on version number takes us to that range. 
+                var verStart = cluster.getTimeRange().getStart();
+                // var verEnd = cluster.getTimeRange().getEnd();
+
+                // Click to drill into the specific changes that make up this cluster. 
+                var onClick = () => {                    
                     var clf = new analyze.NormChangeListFilter()
                         .setUser(user)
                         .setTimeRange(cluster.getTimeRange())
                     return new ShowNDeltaRange(clf);
                 };
 
-                row.VerStart = new ClickableValue<number>(verStart.valueOf(),onClick);
+                var numStart = cluster.getFirst().getIdx();
+                row.VerStart = new ClickableValue<number>(numStart, onClick);
+                row.VerEnd = cluster.getLast().getIdx();
 
-                m.addCluster(cluster, onClick);
+                var color = m.getRandomColor();
+                var glyph = m.addCluster(cluster, color, onClick);
 
+                row.ViewOnMap = new ColorValue(color, () => {
+                    glyph.setFocus();
+                });
 
                 // row.VerEnd = verEnd.valueOf();
 
@@ -739,7 +798,7 @@ class Responses {
     // Answer --> Count of Answer.
     public _counts = new bcl.Dict<number>();
 
-    public getTotal() : number {
+    public getTotal(): number {
         var total = 0;
         this._counts.forEach((answer, count) => {
             total += count;
@@ -778,11 +837,11 @@ class Responses {
 class ResponseTableRow {
     public Answer: string;
     public Count: number;
-    public Percentage : string;
+    public Percentage: string;
 }
 // Rows for the show=deltarange
 class NDeltaRow {
-    public Version: ClickableValue<string>; // Jump to delta
+    public Version: ClickableValue<number>; // Jump to delta
     public RecId: string;
     public HouseholdId: string;
     public User: string;
@@ -886,8 +945,8 @@ export class ShowNDeltaRange extends Mode {
             count.Add(row.RecId);
             countHH.Add(row.HouseholdId);
 
-            var verstr = item.delta.Version + "-" + item.deltaIdx;
-            row.Version = new ClickableValue(verstr,
+            var verNumber = item.getIdx();
+            row.Version = new ClickableValue(verNumber,
                 () => new ShowDelta(item.delta.Version));
 
             row.LocalTime = item.xtimestamp.toLocaleString();
@@ -903,7 +962,7 @@ export class ShowNDeltaRange extends Mode {
             tw.writeRow(row);
         });
 
-        var totalTimeStr = totalTime.getDurationSecondsPretty();        
+        var totalTimeStr = totalTime.getDurationSecondsPretty();
         var note = $("<p>").text(
             count.toString() + " total voters. " +
             countHH + " households. " +
@@ -962,7 +1021,7 @@ export class ShowAnswerSummary extends Mode {
 
                 var total = response.getTotal();
 
-                var rows : ResponseTableRow[] =  [];
+                var rows: ResponseTableRow[] = [];
                 response._counts.forEach((answer, count) => {
                     var row = new ResponseTableRow();
                     row.Answer = answer;
@@ -970,7 +1029,7 @@ export class ShowAnswerSummary extends Mode {
                     row.Percentage = bcl.Counter.GetPercentage(count, total);
                     rows.push(row);
                 });
-                rows.sort((a,b) => b.Count - a.Count);
+                rows.sort((a, b) => b.Count - a.Count);
                 rows.forEach(row => tw.writeRow(row));
 
                 var row = new ResponseTableRow();
