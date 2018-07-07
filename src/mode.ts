@@ -328,18 +328,23 @@ class TableWriter<T> {
 
 class MapHelper {
 
-    private _map : any;
-    private _bounds = new google.maps.LatLngBounds();
+    private readonly _map : any;
+    private readonly _bounds = new google.maps.LatLngBounds();
+    private readonly _ctx: RenderContext;
 
     // private _colors : bcl.Dict<string> = new bcl.Dict<string>();
 
-    public constructor() 
+    public constructor(ctx? : RenderContext) 
     {
+        this._ctx = ctx;
         $("#map").show();
         this._map = new google.maps.Map(document.getElementById('map'));
     }
 
-    public addCluster(cluster : analyze.Cluster): void {
+    // Draw the specific cluster on the map. 
+    // When the cluster is clicked, go to the next() mode. 
+    public addCluster(cluster : analyze.Cluster,
+        next: () => Mode): void {
         
         // path is array of {lat,lng}
         var path: any = [];
@@ -365,7 +370,12 @@ class MapHelper {
             strokeOpacity: 1.0,
             strokeWeight: 3
         });
+        google.maps.event.addListener(flightPath, 'click', () => {
+            var m = next();
+            this._ctx.Next(m);
+        });
         flightPath.setMap(this._map);
+    
     }
 
     // Does final panning and zoom 
@@ -470,8 +480,7 @@ export class ShowSessionList extends Mode {
         var cl = ctx.normChangelist;
         var cl = cl.applyFilter(this._clf);
 
-        var m = new MapHelper();
-        // m.init(cl);
+        var m = new MapHelper(ctx);
 
         var users = cl.filterByUser();
         var table = new TableWriter<SessionRow>(ctx.element, ctx);
@@ -491,8 +500,7 @@ export class ShowSessionList extends Mode {
 
             clusters.forEach(cluster => {
 
-                m.addCluster(cluster);
-                
+               
 
                 var row = new SessionRow();
                 row.User = user;
@@ -500,15 +508,18 @@ export class ShowSessionList extends Mode {
                 
                 var verStart = cluster.getTimeRange().getStart();
                 //var verEnd = cluster.getTimeRange().getEnd();
-                row.VerStart = new ClickableValue<number>(verStart.valueOf(),
-                    () => {
-                        // Clicking on version number takes us to that range. 
-                        var clf = new analyze.NormChangeListFilter()
-                            .setUser(user)
-                            .setTimeRange(cluster.getTimeRange())
-                        return new ShowNDeltaRange(clf);
-                    }
-                );
+
+                var onClick =  () => {
+                    // Clicking on version number takes us to that range. 
+                    var clf = new analyze.NormChangeListFilter()
+                        .setUser(user)
+                        .setTimeRange(cluster.getTimeRange())
+                    return new ShowNDeltaRange(clf);
+                };
+
+                row.VerStart = new ClickableValue<number>(verStart.valueOf(),onClick);
+
+                m.addCluster(cluster, onClick);
 
 
                 // row.VerEnd = verEnd.valueOf();
