@@ -294,6 +294,25 @@ class SessionRow {
     public GapTimeMinutes: number;
 }
 
+// https://stackoverflow.com/a/1144788/534514
+function escapeRegExp(str : string) {
+    return str.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
+}
+
+function replaceAll(str : string, find : string, replace : string) : string{
+    return str.replace(new RegExp(escapeRegExp(find), 'g'), replace);
+}
+
+function escCsv(x: string): string {
+    // Replace(string) only replaces the first occurence. Must use with regEx to replace all
+    // https://stackoverflow.com/questions/1144783/how-to-replace-all-occurrences-of-a-string-in-javascript
+    // Remove problematic chars from the cell
+    return x
+        .replace(/,|\n|\r|,/g, '.')
+        .replace(/\t/g, ' ')
+        .replace(/\"/g, '\'');
+}
+
 class TableWriter<T> {
     private _root: JQuery<HTMLElement>;
     private _table: JQuery<HTMLElement>;
@@ -301,11 +320,52 @@ class TableWriter<T> {
     private _columns: string[];
     private _ctx: RenderContext;
 
+    private _csvContent: string = "";
+    private _csvIdx: number = 0;
+
     public constructor(root: JQuery<HTMLElement>, ctx: RenderContext, columnsNames?: string[]) {
         this._root = root;
         this._count = 0;
         this._ctx = ctx;
         this._columns = columnsNames;
+    }
+
+    // When complete, add the download icon 
+    public addDownloadIcon(): void {
+        var parent = this._root.get(0);
+
+        let button = document.createElement("input");
+        button.type = "image";
+        button.src = "https://trcanvasdata.blob.core.windows.net/publicimages/export-csv.png";
+        button.addEventListener("click", (e) => {
+            var content: string = this._csvContent;
+
+            if (window.navigator.msSaveBlob) {
+                console.debug("using msSaveBlob");
+                window.navigator.msSaveBlob(new Blob([content], { type: "text/csv;charset=utf-8;" }), "data.csv");
+            } else {
+                console.debug("using download attr");
+                let uri = encodeURI("data:text/csv;charset=utf-8," + content);
+                var link = document.createElement("a");
+                link.setAttribute("href", uri);
+                link.setAttribute("download", "data.csv");
+                parent.appendChild(link);
+                link.click();
+            }
+        });
+        parent.insertBefore(button, parent.firstChild);
+    }
+
+    private csvAddNewLine() {
+        this._csvContent += "\r\n";
+        this._csvIdx = 0;
+    }
+    private csvAddCell(x: string) {
+        if (this._csvIdx != 0) {
+            this._csvContent += ",";
+        }
+        this._csvIdx++;
+        this._csvContent += escCsv(x);
     }
 
     public writeRow(row: T): void {
@@ -322,9 +382,12 @@ class TableWriter<T> {
             }
 
             this._columns.forEach(val => {
+                this.csvAddCell(val);
+
                 var td = $("<td>").text(val);
                 tr.append(td);
             });
+            this.csvAddNewLine();
             this._table.append(tr);
         }
 
@@ -333,6 +396,7 @@ class TableWriter<T> {
         this._columns.forEach(columnName => {
             var td = $("<td>");
 
+            var text = "";
             var val: any = (<any>row)[columnName];
             if (!!val) {
                 // Runtime type check: https://stackoverflow.com/a/14426274
@@ -344,11 +408,13 @@ class TableWriter<T> {
                 } else {
                     td.text(val);
                 }
+                text = val.toString();
             }
             tr.append(td);
+            this.csvAddCell(text);
         });
+        this.csvAddNewLine();
         this._table.append(tr);
-
 
         this._count++;
     }
@@ -360,7 +426,7 @@ class MapGlyph {
     private readonly _parent: MapHelper;
     private readonly _bounds = new google.maps.LatLngBounds();
 
-    public constructor(parent : MapHelper)  {
+    public constructor(parent: MapHelper) {
         this._parent = parent;
     }
 
@@ -391,7 +457,7 @@ class MapHelper {
     // Draw the specific cluster on the map. 
     // When the cluster is clicked, go to the next() mode. 
     public addCluster(cluster: analyze.Cluster,
-        color : string, // color to draw cluster in
+        color: string, // color to draw cluster in
         onClickOnLine: () => Mode): MapGlyph {
 
         var glyph = new MapGlyph(this);
@@ -439,7 +505,7 @@ class MapHelper {
         // $$$ the naive random values produce a clustering of dark colors.
         // See a lib like this for more attracitve colors:  https://github.com/davidmerfield/RandomColor
         var randomColor = '#' + ('000000' + Math.floor(Math.random() * 16777215).toString(16)).slice(-6);
-        return randomColor;        
+        return randomColor;
 
     }
 
@@ -563,7 +629,7 @@ export class ShowSessionList extends Mode {
                 // var verEnd = cluster.getTimeRange().getEnd();
 
                 // Click to drill into the specific changes that make up this cluster. 
-                var onClick = () => {                    
+                var onClick = () => {
                     var clf = new analyze.NormChangeListFilter()
                         .setUser(user)
                         .setTimeRange(cluster.getTimeRange())
@@ -628,6 +694,8 @@ export class ShowSessionList extends Mode {
         // Add total
         totals.TotalDuration = bcl.TimeRange.prettyPrintSeconds(totals.TotalMinutes * 60);
         table.writeRow(totals);
+
+        table.addDownloadIcon();
     }
 }
 
@@ -787,6 +855,8 @@ export class ShowDailyReport extends Mode {
         });
         row.Total = new ClickableValue(grandTotal, () => new ShowSessionList(this._clf));
         tw.writeRow(row);
+
+        tw.addDownloadIcon();
     }
 }
 
@@ -969,6 +1039,7 @@ export class ShowNDeltaRange extends Mode {
             totalTimeStr + " total time.");
         placeNoteHere.append(note);
 
+        tw.addDownloadIcon();
     }
 }
 
@@ -1036,6 +1107,8 @@ export class ShowAnswerSummary extends Mode {
                 row.Answer = "TOTAL";
                 row.Count = total;
                 tw.writeRow(row);
+
+                tw.addDownloadIcon();
 
                 ctx.element.append(panel);
             });
@@ -1122,6 +1195,8 @@ export class ShowDeltaRange extends Mode {
 
         });
 
+        tw.addDownloadIcon();
+
     }
 
     private scan(delta: trcSheet.IDeltaInfo): string {
@@ -1177,6 +1252,10 @@ export class ShowFlattenToRecId extends Mode {
         var sc = cl.flattenByRecId();
         var r = new trchtml.RenderSheet("contents", sc);
         r.render();
+
+        // Download icon
+        var parent = ctx.element.get(0);
+        trchtml.DownloadHelper.appendDownloadCsvButton(parent, () => sc);
     }
 }
 
@@ -1255,5 +1334,7 @@ export class ShowFunStats extends Mode {
         tw.writeRow({ Stat: "Total Contacts", Value: totalContacts.toString() });
         tw.writeRow({ Stat: "Total Households", Value: totalHouseholds.toString() });
         tw.writeRow({ Stat: "Total unique days", Value: totalUniqueDays.toString() });
+
+        tw.addDownloadIcon();
     }
 }
