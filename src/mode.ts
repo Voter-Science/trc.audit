@@ -327,22 +327,72 @@ class TableWriter<T> {
 }
 
 class MapHelper {
-    public init(cl: analyze.NormChangeList): void {
+
+    private _map : any;
+    private _bounds = new google.maps.LatLngBounds();
+
+    // private _colors : bcl.Dict<string> = new bcl.Dict<string>();
+
+    public constructor() 
+    {
         $("#map").show();
-        var map = new google.maps.Map(document.getElementById('map'));
+        this._map = new google.maps.Map(document.getElementById('map'));
+    }
+
+    public addCluster(cluster : analyze.Cluster): void {
+        
+        // path is array of {lat,lng}
+        var path: any = [];
+
+        var randomColor = this.getRandomColor();
+        cluster.forEach(item => {
+            var user = item.getUser();
+
+            if (!item.xloc) {
+                return;
+            }
+
+            var pst = new google.maps.LatLng(item.xloc.Lat, item.xloc.Long);
+
+            path.push({ lat: item.xloc.Lat, lng: item.xloc.Long });
+            this._bounds.extend(pst);
+        });
+
+        var flightPath = new google.maps.Polyline({
+            path: path,
+            geodesic: true,
+            strokeColor: randomColor,
+            strokeOpacity: 1.0,
+            strokeWeight: 3
+        });
+        flightPath.setMap(this._map);
+    }
+
+    // Does final panning and zoom 
+    public done() : void {
+        this._map.fitBounds(this._bounds);       // auto-zoom
+        this._map.panToBounds(this._bounds);     // auto-center
+    }
+
+    public getRandomColor() : string {
+        var randomColor = '#' + ('000000' + Math.floor(Math.random() * 16777215).toString(16)).slice(-6);
+        return randomColor;
+
+    }
+
+    public init(cl: analyze.NormChangeList): void {
+        //$("#map").show();
+        //var map = new google.maps.Map(document.getElementById('map'));
 
         var infowindow = new google.maps.InfoWindow();
-        var bounds = new google.maps.LatLngBounds();
         var latLng: any = {};
 
         // Draw a walkpath 
         var users = cl.getUsers();
-
         var userCls = cl.filterByUser();
 
-
         for (var i in users) {
-            var randomColor = '#' + ('000000' + Math.floor(Math.random() * 16777215).toString(16)).slice(-6);
+            var randomColor = this.getRandomColor();
 
             var user: string = users[i];
             var userCl :analyze.NormChangeList = userCls.get(user);
@@ -376,7 +426,7 @@ class MapHelper {
                 })(marker, j, infoContent));*/
 
                 path.push({ lat: delta.xloc.Lat, lng: delta.xloc.Long });
-                bounds.extend(pst);
+                this._bounds.extend(pst);
             });
 
             var flightPath = new google.maps.Polyline({
@@ -386,13 +436,11 @@ class MapHelper {
                 strokeOpacity: 1.0,
                 strokeWeight: 3
             });
-            flightPath.setMap(map);
+            flightPath.setMap(this._map);
 
         } // per user
 
-
-        map.fitBounds(bounds);       // auto-zoom
-        map.panToBounds(bounds);     // auto-center
+        this.done();
     }
 }
 
@@ -423,7 +471,7 @@ export class ShowSessionList extends Mode {
         var cl = cl.applyFilter(this._clf);
 
         var m = new MapHelper();
-        m.init(cl);
+        // m.init(cl);
 
         var users = cl.filterByUser();
         var table = new TableWriter<SessionRow>(ctx.element, ctx);
@@ -442,6 +490,9 @@ export class ShowSessionList extends Mode {
             var lastTime: Date;
 
             clusters.forEach(cluster => {
+
+                m.addCluster(cluster);
+                
 
                 var row = new SessionRow();
                 row.User = user;
@@ -501,6 +552,8 @@ export class ShowSessionList extends Mode {
                 table.writeRow(row);
             });
         });
+
+        m.done();
 
         // Add total
         totals.TotalDuration = bcl.TimeRange.prettyPrintSeconds(totals.TotalMinutes * 60);
