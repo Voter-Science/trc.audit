@@ -11,7 +11,7 @@
     "trc-core": "^1.0.0",
     "trc-sheet": "^1.5.0",
     "trc-web": "^1.0.0",
-    "trc-analyze" : "^1.4.0"
+    "trc-analyze" : "^1.5.0"
   },
   "devDependencies": {
     "@types/jquery": "^3.3.1",

@@ -295,11 +295,11 @@ class SessionRow {
 }
 
 // https://stackoverflow.com/a/1144788/534514
-function escapeRegExp(str : string) {
+function escapeRegExp(str: string) {
     return str.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
 }
 
-function replaceAll(str : string, find : string, replace : string) : string{
+function replaceAll(str: string, find: string, replace: string): string {
     return str.replace(new RegExp(escapeRegExp(find), 'g'), replace);
 }
 
@@ -1298,6 +1298,9 @@ export class ShowFunStats extends Mode {
         var totalHouseholds = 0;
         var totalUniqueDays = new bcl.HashCount();
 
+        var totalTidbits = 0;
+        var totalHardPartyId = 0;
+        var totalHardSupporterId = 0;
 
         var userCls: bcl.Dict<analyze.NormChangeList> = cl.filterByUser();
         userCls.forEach((user, cl2) => {
@@ -1316,6 +1319,23 @@ export class ShowFunStats extends Mode {
 
                 var tr: Date = cluster.getTimeRange().getStart();
 
+                // Count tidbits: actual information collected. 
+                cluster.forEach(item => {
+                    item.forEach((columnName, newValue) => {
+                        if (!!newValue && newValue.length > 0) {
+                            if (columnName == ColumnNames.Party) {
+                                totalHardPartyId++;
+                            }
+                            if (columnName == "Supporter") {
+                                totalHardSupporterId++;
+                            }
+                            if (columnName != "ResultOfContact" && columnName[0] != "X") {
+
+                                totalTidbits++;
+                            }
+                        }
+                    });
+                });
 
                 var trStart = rountToLocalStartDay(tr);
                 //var trStart = bcl.TimeRange.roundToDay(tr);
@@ -1333,6 +1353,14 @@ export class ShowFunStats extends Mode {
         tw.writeRow({ Stat: "Total Distance Walked (Miles)", Value: distMile.toFixed(2) });
         tw.writeRow({ Stat: "Total Contacts", Value: totalContacts.toString() });
         tw.writeRow({ Stat: "Total Households", Value: totalHouseholds.toString() });
+        tw.writeRow({ Stat: "Total Tidbits", Value: totalTidbits.toString() });
+
+        if (totalHardPartyId > 0) {
+            tw.writeRow({ Stat: "Total Hard ID (Party)", Value: totalHardPartyId.toString() });
+        }
+        if (totalHardSupporterId > 0) {
+            tw.writeRow({ Stat: "Total Hard ID (Supporter)", Value: totalHardSupporterId.toString() });
+        }
         tw.writeRow({ Stat: "Total unique days", Value: totalUniqueDays.toString() });
 
         tw.addDownloadIcon();
