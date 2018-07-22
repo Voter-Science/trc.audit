@@ -884,19 +884,21 @@ class Responses {
         normChangelist.forEach(item => {
             item.forEach((columnName, newValue) => {
 
-                var response = d.get(columnName);
-                if (!response) {
-                    response = new Responses();
-                    response.Name = columnName;
-                    d.add(columnName, response);
-                }
+                if (!!newValue && newValue.length > 0) {
+                    var response = d.get(columnName);
+                    if (!response) {
+                        response = new Responses();
+                        response.Name = columnName;
+                        d.add(columnName, response);
+                    }
 
-                var c = response._counts.get(newValue);
-                if (!c) {
-                    c = 0;
+                    var c = response._counts.get(newValue);
+                    if (!c) {
+                        c = 0;
+                    }
+                    c++;
+                    response._counts.add(newValue, c);
                 }
-                c++;
-                response._counts.add(newValue, c);
             });
         });
         return d;
