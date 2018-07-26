@@ -1351,7 +1351,7 @@ export class ShowFunStats extends Mode {
         tw.writeRow({ Stat: "Total Active Time", Value: bcl.TimeRange.prettyPrintSeconds(totalSeconds) });
         tw.writeRow({ Stat: "Total users", Value: totalUsers.toString() });
         tw.writeRow({ Stat: "Total Distance Walked (km)", Value: totalDistanceKM.toFixed(2) })
-        var distMile = totalDistanceKM / 0.62137119;
+        var distMile = totalDistanceKM * 0.62137119;
         tw.writeRow({ Stat: "Total Distance Walked (Miles)", Value: distMile.toFixed(2) });
         tw.writeRow({ Stat: "Total Contacts", Value: totalContacts.toString() });
         tw.writeRow({ Stat: "Total Households", Value: totalHouseholds.toString() });
