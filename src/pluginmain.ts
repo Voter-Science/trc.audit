@@ -2,9 +2,9 @@
 // Demonstrates:
 // - typescript
 // - using trc npm modules and browserify
-// - uses promises. 
-// - basic scaffolding for error reporting. 
-// This calls TRC APIs and binds to specific HTML elements from the page.  
+// - uses promises.
+// - basic scaffolding for error reporting.
+// This calls TRC APIs and binds to specific HTML elements from the page.
 
 import * as XC from 'trc-httpshim/xclient'
 import * as common from 'trc-httpshim/common'
@@ -25,7 +25,7 @@ import * as _mode from './mode'
 
 // Installed via:
 //   npm install --save-dev @types/jquery
-// requires tsconfig: "allowSyntheticDefaultImports" : true 
+// requires tsconfig: "allowSyntheticDefaultImports" : true
 declare var $: JQueryStatic;
 
 // Provide easy error handle for reporting errors from promises.  Usage:
@@ -51,7 +51,7 @@ export class MyPlugin {
         });
     }
 
-    // Expose constructor directly for tests. They can pass in mock versions. 
+    // Expose constructor directly for tests. They can pass in mock versions.
     public constructor(p: plugin.PluginClient) {
         this._sheet = new trcSheet.SheetClient(p.HttpClient, p.SheetId);
     }
@@ -65,7 +65,7 @@ export class MyPlugin {
         }
         return x;
     }
-    private appendX(x: string, elementId: string, name: string): string {        
+    private appendX(x: string, elementId: string, name: string): string {
         var val: string = <string> $("#" + elementId).val();
         if (!!val && val.length > 0) {
             x += ";" + name + "=" + val;
@@ -95,38 +95,44 @@ export class MyPlugin {
 
     private updateFilters() : void {
         var val = <string> $("#mode_select option:selected").val();
-        
-        $("#group_ver").hide();
-        $("#group_users").hide();
-        $("#group_UtcRange").hide();
+
+        // $("#group_ver").hide();
+        $(".version-wrap").hide();
+        // $("#group_users").hide();
+        $(".users-wrap").hide();
+        // $("#group_UtcRange").hide();
+        $(".range-wrap").hide();
 
         var descr = _mode.ModeDescr.lookup(val);
         if (descr.useTimeRange()) {
-            $("#group_UtcRange").show();
+            // $("#group_UtcRange").show();
+            $(".range-wrap").show();
         }
         if (descr.useUsers()) {
-            $("#group_users").show();
+            // $("#group_users").show();
+            $(".users-wrap").show();
         }
         if (descr.useVerNum()) {
-            $("#group_ver").show();
-        }           
+            // $("#group_ver").show();
+            $(".version-wrap").show();
+        }
     }
-    // Make initial network calls to setup the plugin. 
-    // Need this as a separate call from the ctor since ctors aren't async. 
+    // Make initial network calls to setup the plugin.
+    // Need this as a separate call from the ctor since ctors aren't async.
     private InitAsync(): Promise<void> {
 
         {
             $("#f_apply").click(() => this.OnApplyFilter());
 
             var s = $("<select>").attr("id", "mode_select").change(() => {
-                this.updateFilters();                   
+                this.updateFilters();
             });
 
-            
+
             for(var descr  of  _mode.ModeDescr.List) {
                 s.append($("<option>").val(descr._hashName)
-                    .text(descr._descr));    
-            }         
+                    .text(descr._descr));
+            }
 
             $("#modepicker").append(s);
         }
@@ -148,7 +154,7 @@ export class MyPlugin {
             );
             this._analyze = a;
 
-            // this will force a cache 
+            // this will force a cache
             return a.getHouseholder().then(householder =>
                 a.getAllChangesAsync().then(changelist => {
                     this._ctx = new _mode.RenderContext();
@@ -163,7 +169,7 @@ export class MyPlugin {
                     };
 
                     //var mode = new _mode.ShowDeltaRange(changelist);
-                    //this.show(mode)                
+                    //this.show(mode)
                     this.showCurrentHash();
                 }));
         });
@@ -175,7 +181,7 @@ export class MyPlugin {
         var hash = window.location.hash; // Escaped value, starts with '#'
         if (!hash || hash.length < 2) {
             // Blank .. set to something.
-            // This will trigger an on-change event. 
+            // This will trigger an on-change event.
             window.location.hash = "show=daily";
             return;
         }
@@ -196,10 +202,10 @@ export class MyPlugin {
     private show(mode: _mode.Mode) {
         // https://gist.github.com/LoonyPandora/5157532
 
-        // Setting the hash will also cooperate with forward and backward buttons 
+        // Setting the hash will also cooperate with forward and backward buttons
         // https://blog.httpwatch.com/2011/03/01/6-things-you-should-know-about-fragment-urls/
 
-        // This will trigger the onhashchange event, although it may fire deferred 
+        // This will trigger the onhashchange event, although it may fire deferred
         window.location.hash = mode.toHash();
 
         // this.showInternal(mode);
@@ -215,14 +221,14 @@ export class MyPlugin {
         $("#queryx").text(hash);
 
 
-        // Set filters 
+        // Set filters
         // Enable disable groups based on mode
         {
             var obj = bcl.KeyParser.parse(hash);
             var kind = obj["show"];
             $("#mode_select").val(kind);
             this.updateFilters();
-            // $$$ Fire update here 
+            // $$$ Fire update here
 
             var user = obj["user"];
             if (!!user) {
