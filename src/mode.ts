@@ -11,7 +11,7 @@ declare var $: JQueryStatic;
 
 declare var google: any;
 
-// Different lists 
+// Different lists
 
 //  key=value;key=value;key=value
 
@@ -22,14 +22,14 @@ declare var google: any;
 //     TimeStart=xxxx;TimeEnd=yyyyy
 //     App=xxxxxxx
 
-// Show an exact delta 
+// Show an exact delta
 //   Show=Delta;Version=45
 //
-// Delta list. Optional filters. 
+// Delta list. Optional filters.
 //   Show=DeltaList;
 //      [ChangelistFilters]
 //
-// Session List. These are the clusters 
+// Session List. These are the clusters
 //   Show=Sessions
 //      [ChangelistFilters]
 //
@@ -40,34 +40,34 @@ function round2(n: number): number {
     return Math.round(n * 100) / 100;
 }
 
-// convert a date into a sortable integer. 
+// convert a date into a sortable integer.
 // YYYYMMDD
 function sortableDay(x: Date): number {
-    var year: number = x.getFullYear();     // 4 digit year 
+    var year: number = x.getFullYear();     // 4 digit year
     var month: number = 1 + x.getMonth(); // months are 0-based
-    var day: number = x.getDate();  // days are 1-based 
+    var day: number = x.getDate();  // days are 1-based
     return year * 10000 + month * 100 + day;
 }
 
-// Round a date to the start date in local time. 
+// Round a date to the start date in local time.
 function rountToLocalStartDay(d: Date): Date {
 
-    var year = d.getFullYear(); // 2018 
+    var year = d.getFullYear(); // 2018
     var month = d.getMonth(); // 0-based; but Date ctor is also 0-based
-    var date = d.getDate(); //  1-based 
+    var date = d.getDate(); //  1-based
 
     return new Date(year, month, date);
 
     /*
-        const p = 24 * 60 * 60 * 1000; // milliseconds in a day 
-    
+        const p = 24 * 60 * 60 * 1000; // milliseconds in a day
+
         var t = d.getTime(); // Milliseconds  since UTC
-    
+
         var start = Math.round(t / p) * p; // start of UTC day
-    
-        var minutes = d.getTimezoneOffset(); //  minutes, ie 420 = 7 hours. 
+
+        var minutes = d.getTimezoneOffset(); //  minutes, ie 420 = 7 hours.
         start += minutes *60 *1000; // adjust to local time
-        
+
         return new Date(start);*/
 }
 
@@ -87,7 +87,7 @@ function addNormalizedDay(x: ISheetContents, columnName: string, newColumnName: 
     }
 }*/
 
-// Context passed to rendering 
+// Context passed to rendering
 export class RenderContext {
     public changelist: analyze.Changelist;
     public normChangelist: analyze.NormChangeList;
@@ -96,7 +96,7 @@ export class RenderContext {
 
     public element: JQuery<HTMLElement>;
 
-    // used by click handlers 
+    // used by click handlers
     public Next: (mode: Mode) => void;
 }
 
@@ -109,7 +109,7 @@ function clickable(ctx: RenderContext, text: string, next: () => Mode): JQuery<H
     return td1;
 }
 
-// Static description of the different modes. 
+// Static description of the different modes.
 export class ModeDescr {
     public static List: ModeDescr[] = [
         new ModeDescr("daily", "Show a daily report for all users"),
@@ -150,7 +150,7 @@ export class ModeDescr {
     }
 }
 
-// All modes are totally serializable. 
+// All modes are totally serializable.
 export abstract class Mode {
     static parse(value: string): Mode {
 
@@ -166,7 +166,7 @@ export abstract class Mode {
             return new ShowDelta(ver);
         }
         if (kind == "deltarange") {
-            // var ver = parseInt(obj["ver"]);                    
+            // var ver = parseInt(obj["ver"]);
             return new ShowDeltaRange(clf);
 
         } // sessions
@@ -186,7 +186,7 @@ export abstract class Mode {
             return new ShowAnswerSummary(normFilter);
         }
 
-        // Flatten by RecId, like Blame report. 
+        // Flatten by RecId, like Blame report.
         if (kind == "byrecid") {
             return new ShowFlattenToRecId(clf);
         }
@@ -237,7 +237,7 @@ export class ShowDelta extends Mode {
 interface IRenderCell {
     render(ctx: RenderContext): JQuery<HTMLElement>;
 }
-// For setting in Table rows 
+// For setting in Table rows
 class ClickableValue<T> implements IRenderCell {
     public _next: () => Mode; // What happens when we click
     public _value: T;
@@ -255,7 +255,7 @@ class ClickableValue<T> implements IRenderCell {
     }
 }
 
-// For displaying a color in Table rows 
+// For displaying a color in Table rows
 class ColorValue implements IRenderCell {
     public _color: string;
     public _next: () => void; // What happens when we click
@@ -330,7 +330,7 @@ class TableWriter<T> {
         this._columns = columnsNames;
     }
 
-    // When complete, add the download icon 
+    // When complete, add the download icon
     public addDownloadIcon(): void {
         var parent = this._root.get(0);
 
@@ -370,9 +370,9 @@ class TableWriter<T> {
 
     public writeRow(row: T): void {
         if (this._count == 0) {
-            // Writer header 
+            // Writer header
 
-            this._table = $("<table>").attr("border", '1');
+            this._table = $("<table>").attr("class", "table table-striped");
             this._root.append(this._table);
 
             var tr = $("<tr>");
@@ -384,8 +384,8 @@ class TableWriter<T> {
             this._columns.forEach(val => {
                 this.csvAddCell(val);
 
-                var td = $("<td>").text(val);
-                tr.append(td);
+                var th = $("<th>").text(val);
+                tr.append(th);
             });
             this.csvAddNewLine();
             this._table.append(tr);
@@ -444,7 +444,7 @@ class MapHelper {
 
     public readonly _map: any;
 
-    // Track bounds for all items. 
+    // Track bounds for all items.
     private readonly _bounds = new google.maps.LatLngBounds();
     private readonly _ctx: RenderContext;
 
@@ -454,8 +454,8 @@ class MapHelper {
         this._map = new google.maps.Map(document.getElementById('map'));
     }
 
-    // Draw the specific cluster on the map. 
-    // When the cluster is clicked, go to the next() mode. 
+    // Draw the specific cluster on the map.
+    // When the cluster is clicked, go to the next() mode.
     public addCluster(cluster: analyze.Cluster,
         color: string, // color to draw cluster in
         onClickOnLine: () => Mode): MapGlyph {
@@ -495,7 +495,7 @@ class MapHelper {
         return glyph;
     }
 
-    // Does final panning and zoom 
+    // Does final panning and zoom
     public done(): void {
         this._map.fitBounds(this._bounds);       // auto-zoom
         this._map.panToBounds(this._bounds);     // auto-center
@@ -516,7 +516,7 @@ class MapHelper {
         var infowindow = new google.maps.InfoWindow();
         var latLng: any = {};
 
-        // Draw a walkpath 
+        // Draw a walkpath
         var users = cl.getUsers();
         var userCls = cl.filterByUser();
 
@@ -577,7 +577,7 @@ class MapHelper {
 // Shows list of sessions (Clusters)
 // Filter: Day, User
 // Click on VerStart -->  DeltaRange VerStart...VerEnd
-// Click on VoterCount --> Which recids? 
+// Click on VoterCount --> Which recids?
 // Click on househodls --> Which households?
 export class ShowSessionList extends Mode {
     private _clf: analyze.NormChangeListFilter; // already has filter applied!
@@ -628,7 +628,7 @@ export class ShowSessionList extends Mode {
                 var verStart = cluster.getTimeRange().getStart();
                 // var verEnd = cluster.getTimeRange().getEnd();
 
-                // Click to drill into the specific changes that make up this cluster. 
+                // Click to drill into the specific changes that make up this cluster.
                 var onClick = () => {
                     var clf = new analyze.NormChangeListFilter()
                         .setUser(user)
@@ -649,7 +649,7 @@ export class ShowSessionList extends Mode {
 
                 // row.VerEnd = verEnd.valueOf();
 
-                var tr = cluster.getTimeRange(); // local time 
+                var tr = cluster.getTimeRange(); // local time
                 var trStart = bcl.TimeRange.roundToDay(tr.getStart());
                 row.DayNumber = sortableDay(trStart);
                 row.Day = trStart.toDateString();
@@ -699,7 +699,7 @@ export class ShowSessionList extends Mode {
     }
 }
 
-// Each cell in the daily report. 
+// Each cell in the daily report.
 class DailyX {
     private _seconds: number = 0;
 
@@ -715,11 +715,11 @@ class DailyX {
             return;
         }
         var start = rountToLocalStartDay(day);
-        var end = new Date(start.getTime() + 60 * 60 * 24 * 1000 - 1); // last MS of the day 
+        var end = new Date(start.getTime() + 60 * 60 * 24 * 1000 - 1); // last MS of the day
         this._verRange = new bcl.TimeRange(start, end);
     }
 
-    // Get a mode object that shows this cell in detail. 
+    // Get a mode object that shows this cell in detail.
     public getMode(): Mode {
         var clf = new analyze.NormChangeListFilter()
             .setUser(this._user)
@@ -729,12 +729,12 @@ class DailyX {
 
     // Aggregate from existing cells (used for row, column summaries)
     public aggregate(other: DailyX): void {
-        // Ignore user. 
+        // Ignore user.
         this._verRange.expandToInclude(other._verRange);
         this._seconds += other._seconds;
     }
 
-    // Build up from clusters. 
+    // Build up from clusters.
     public build(cluster: analyze.Cluster): void {
         this._seconds += cluster.getDurationSeconds();
     }
@@ -749,7 +749,7 @@ class DailyX {
 }
 
 // Show a 2d table, data[User][Day] = total minutes
-// clicking on a cell takes to that session 
+// clicking on a cell takes to that session
 export class ShowDailyReport extends Mode {
     private _clf: analyze.NormChangeListFilter; // already has filter applied!
 
@@ -772,7 +772,7 @@ export class ShowDailyReport extends Mode {
         var cl = ctx.normChangelist;
         cl = cl.applyFilter(this._clf);
 
-        // map of each user's daily activity.         
+        // map of each user's daily activity.
         var perUserPerDay = new bcl.Dict2d<DailyX>(); // (per-User, per-day) --> DailyX
 
 
@@ -796,17 +796,17 @@ export class ShowDailyReport extends Mode {
             });
         });
 
-        // Sort alphabetically 
-        // Columns are Dates. 
-        // Rows are people. 
+        // Sort alphabetically
+        // Columns are Dates.
+        // Rows are people.
 
         var users = perUserPerDay.getKey1s();
         var days = perUserPerDay.getKey2s();
         days = days.sort();
 
 
-        // Write out table 
-        // Also calculates totals 
+        // Write out table
+        // Also calculates totals
         var columnNames = ["User"].concat(days); // columns to display in the table, in-order.
         columnNames.push("Total");
 
@@ -831,7 +831,7 @@ export class ShowDailyReport extends Mode {
                     min = cell.getMinutes();
                     row[day] = new ClickableValue(cell, () => cell.getMode());
 
-                    // Calculate totals 
+                    // Calculate totals
                     grandTotal.aggregate(cell);
 
                     var t = totalsPerDay.get(day);
@@ -860,11 +860,11 @@ export class ShowDailyReport extends Mode {
     }
 }
 
-// Track group  of individual responses, per-question. 
+// Track group  of individual responses, per-question.
 class Responses {
-    public Name: string; // ColumnName 
+    public Name: string; // ColumnName
 
-    // Histogram 
+    // Histogram
     // Answer --> Count of Answer.
     public _counts = new bcl.Dict<number>();
 
@@ -877,7 +877,7 @@ class Responses {
     }
 
     // Build up a list of responses
-    // Dictionary is Question --> Hist of Responses. 
+    // Dictionary is Question --> Hist of Responses.
     public static Build(normChangelist: analyze.NormChangeList): bcl.Dict<Responses> {
         var d = new bcl.Dict<Responses>();
 
@@ -1046,7 +1046,7 @@ export class ShowNDeltaRange extends Mode {
 }
 
 
-// Show normalizedSummary of answers 
+// Show normalizedSummary of answers
 export class ShowAnswerSummary extends Mode {
     private _clf: analyze.NormChangeListFilter; // already has filter applied!
 
@@ -1121,7 +1121,7 @@ export class ShowAnswerSummary extends Mode {
 
 // Rows for the show=deltarange
 class DeltaRow {
-    public Version: ClickableValue<number>; // Unique version number. 
+    public Version: ClickableValue<number>; // Unique version number.
     public User: string;
     public LocalUploadTime: string;
     public Notes: string;
@@ -1129,7 +1129,7 @@ class DeltaRow {
     public Contents: string;
 
 }
-// Shows a range of deltas 
+// Shows a range of deltas
 // Clicks:
 //   - on ver# --> ShowDelta(version)
 export class ShowDeltaRange extends Mode {
@@ -1181,7 +1181,7 @@ export class ShowDeltaRange extends Mode {
 
         cl.forEachRawDelta((delta: trcSheet.IDeltaInfo) => {
 
-            // scan if delta has 
+            // scan if delta has
 
             var row = new DeltaRow();
             row.Notes = this.scan(delta);
@@ -1212,18 +1212,18 @@ export class ShowDeltaRange extends Mode {
             // get diff
             var diff = new bcl.TimeRange(new Date(time), uploadTime);
             var diffS = diff.getDurationSeconds()
-            if (Math.abs(diffS) > 10 * 60) { // flag diffs greater than 10 minutes  
+            if (Math.abs(diffS) > 10 * 60) { // flag diffs greater than 10 minutes
                 return diff.getDurationSecondsPretty() + " upload delay";
             }
         }
     }
 }
 
-// $$$ anomly list?  
+// $$$ anomly list?
 // Clicks:
 // - click on answer: show all versions that edited a specific cell (RecId,Column)
-//       -   is that a more complex filter? 
-// - click on RecId: show all versions that edited the recid. 
+//       -   is that a more complex filter?
+// - click on RecId: show all versions that edited the recid.
 export class ShowFlattenToRecId extends Mode {
     private _clf: analyze.ChangelistFilter; // already has filter applied!
 
@@ -1289,7 +1289,7 @@ export class ShowFunStats extends Mode {
         var cl = ctx.normChangelist;
         cl = cl.applyFilter(this._clf);
 
-        // map of each user's daily activity. 
+        // map of each user's daily activity.
         // (per-User, per-day) --> DailyX
         var d = new bcl.Dict2d<DailyX>();
 
@@ -1321,7 +1321,7 @@ export class ShowFunStats extends Mode {
 
                 var tr: Date = cluster.getTimeRange().getStart();
 
-                // Count tidbits: actual information collected. 
+                // Count tidbits: actual information collected.
                 cluster.forEach(item => {
                     item.forEach((columnName, newValue) => {
                         if (!!newValue && newValue.length > 0) {

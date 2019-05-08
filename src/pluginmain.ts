@@ -124,7 +124,7 @@ export class MyPlugin {
         {
             $("#f_apply").click(() => this.OnApplyFilter());
 
-            var s = $("<select>").attr("id", "mode_select").change(() => {
+            var s = $("<select>").attr("id", "mode_select").attr("class", "form-control").change(() => {
                 this.updateFilters();
             });
 

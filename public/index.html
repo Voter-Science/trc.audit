@@ -103,55 +103,65 @@
               <div class="col-sm-12">
                 <h2>What to query?</h2>
                 <div class="audit-query">
-                  <ul>
-                    <li>
-                      <label for="mode_select">Mode:</label>
-                      <div id="modepicker"></div>
-                      <p class="note">Additional filters (leave blank to ignore):</p>
-                    </li>
+                  <form class="form-horizontal">
+                    <ul>
+                      <li class="form-group">
+                        <label class="col-sm-2 control-label" for="mode_select">Mode:</label>
+                        <div class="col-sm-4">
+                          <div id="modepicker"></div>
+                          <p class="note">Additional filters (leave blank to ignore):</p>
+                        </div>
+                      </li>
 
-                    <li class="version-wrap">
-                      <div id="group_ver">
-                        <label for="f_ver">Version#:</label>
-                        <input type="number" id="f_ver" />
-                      </div>
-                    </li>
+                      <li class="version-wrap form-group">
+                        <div id="group_ver">
+                          <label class="col-sm-2 control-label" for="f_ver">Version#:</label>
+                          <div class="col-sm-6">
+                            <input type="number" id="f_ver" class="form-control" />
+                          </div>
+                        </div>
+                      </li>
 
-                    <li class="users-wrap">
-                      <div id="group_users">
-                        <label for="f_users">User:</label>
-                        <input size=80 id="f_users" />
-                      </div>
-                    </li>
+                      <li class="users-wrap form-group">
+                        <div id="group_users">
+                          <label class="col-sm-2 control-label" for="f_users">User:</label>
+                          <div class="col-sm-6">
+                            <input size=80 id="f_users" class="form-control" />
+                          </div>
+                        </div>
+                      </li>
 
-                    <li class="range-wrap">
-                      <div id="group_UtcRange">
-                        <label for="f_utcstart">Time range:</label>
-                        <input id="f_utcstart" /> to <input id="f_utcend" />
-                        <p class="note">Time is in format:
-                          '<strong>MM/DD/YYYY</strong>,<strong>HH:MM:SS AM</strong>' (local time)  or
-                          '<strong>YYYY-MM-DD</strong>T<strong>HH:MM:SS</strong>Z' (utc time)
-                        </p>
-                      </div>
-                    </li>
+                      <li class="range-wrap form-group">
+                        <div id="group_UtcRange">
+                          <label class="col-sm-2 control-label" for="f_utcstart">Time range:</label>
+                          <div class="col-sm-10">
+                            <input id="f_utcstart" class="form-control half-size" />
+                            <span class="form-separator">to</span>
+                            <input id="f_utcend" class="form-control half-size" />
+                            <p class="note">Time is in format:
+                              '<strong>MM/DD/YYYY</strong>,<strong>HH:MM:SS AM</strong>' (local time)  or
+                              '<strong>YYYY-MM-DD</strong>T<strong>HH:MM:SS</strong>Z' (utc time)
+                            </p>
+                          </div>
 
-                    <li>
-                      <button id="f_apply" class="btn btn-green btn-fixed">Apply!</button>
-                    </li>
-                  </ul>
+                        </div>
+                      </li>
+
+                      <li class="form-group">
+                        <div class="col-sm-offset-2 col-sm-10">
+                          <button id="f_apply" class="btn btn-green btn-fixed">Apply!</button>
+                        </div>
+                      </li>
+                    </ul>
+                  </form>
                 </div>
 
-                <p>
-                    <div id="descr"></div>
-                </p>
+                <p id="descr"></p>
 
                 <p>Parameter for this view: (you can also copy the url)</p>
-                <pre id="queryx">
-                </pre>
+                <pre id="queryx"></pre>
 
-                <p>
-                    <div id="descr"></div>
-                </p>
+                <p id="descr"></p>
                 <div class="col-sm-12" id="map" style="width:100%; height:500px; "></div>
                 <br/>
 
