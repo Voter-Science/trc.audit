@@ -76,6 +76,10 @@ h4 {
   }
 }
 
+.results-wrap h5 {
+  margin: 0 0 20px;
+}
+
 .small h1 {
   font-size: 43px;
   margin: 0 0 37px;
@@ -251,6 +255,41 @@ h4 {
   margin-top: 3px;
 }
 
+.results-wrap .note {
+  margin: 0 0 3px;
+}
+
+.result-content {
+  margin-top: 30px;
+}
+
+.result-content .table {
+  margin-top: 20px;
+}
+
+.result-content .inline-icon {
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.result-content .download-label {
+  display: inline-block;
+  font-weight: bold;
+  margin: 0 5px 0 0;
+  transform: translateY(-3px);
+}
+
+.result-content .inline-icon::before {
+  display: none;
+  font-style: normal;
+  font-variant: normal;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+  font-family: "Font Awesome 5 Free";
+  font-weight: 900;
+  content: "\f019";
+}
+
 .form-control.half-size {
   display: inline-block;
   width: 30%;
@@ -261,8 +300,4 @@ h4 {
   padding: 0 5px;
   font-weight: bold;
   text-align: center;
-}
-
-#contents {
-  margin-top: 30px;
 }

@@ -6,12 +6,16 @@
     <title>Basic TRC plugin</title>
 
     <link rel="stylesheet" type="text/css" href="trcgrid.css">
+    <link rel="stylesheet" type="text/css" href="daterangepicker.css">
     <link rel="stylesheet" type="text/css" href="main.css">
 
     <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u"
         crossorigin="anonymous">
     <script src="https://code.jquery.com/jquery-1.11.3.min.js"></script>
-    <script defer src="https://use.fontawesome.com/releases/v5.8.1/js/all.js" integrity="sha384-g5uSoOSBd7KkhAMlnQILrecXvzst9TdC09/VM+pjDTCM+1il8RHz5fKANTFFb+gQ" crossorigin="anonymous"></script>
+    <script data-search-pseudo-elements defer src="https://use.fontawesome.com/releases/v5.8.1/js/all.js" integrity="sha384-g5uSoOSBd7KkhAMlnQILrecXvzst9TdC09/VM+pjDTCM+1il8RHz5fKANTFFb+gQ" crossorigin="anonymous"></script>
+
+    <script src="moment.min.js"></script>
+    <script src="daterangepicker.js"></script>
 
     <script src="bundle.js"></script>
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAGU_ME0ojsMVk-VktaIx_BP381AOjmlDM"></script>
@@ -54,6 +58,17 @@
                 showError(error);
             });
         }
+
+        $(function() {
+          $('input[id="f_utcstart"]').daterangepicker({
+            timePicker: true,
+            startDate: moment().startOf('hour'),
+            endDate: moment().startOf('hour').add(32, 'hour'),
+            locale: {
+              format: 'MM/DD/YYYY hh:mm A'
+            }
+          });
+        });
     </script>
     <script src="https://trcanvasdata.blob.core.windows.net/code2/plugin.js"></script>
 </head>
@@ -134,10 +149,10 @@
                       <li class="range-wrap form-group">
                         <div id="group_UtcRange">
                           <label class="col-sm-2 control-label" for="f_utcstart">Time range:</label>
-                          <div class="col-sm-10">
-                            <input id="f_utcstart" class="form-control half-size" />
-                            <span class="form-separator">to</span>
-                            <input id="f_utcend" class="form-control half-size" />
+                          <div class="col-sm-6">
+                            <input id="f_utcstart" class="form-control" />
+                            <!-- <span class="form-separator">to</span> -->
+                            <!-- <input id="f_utcend" class="form-control half-size" /> -->
                             <p class="note">Time is in format:
                               '<strong>MM/DD/YYYY</strong>,<strong>HH:MM:SS AM</strong>' (local time)  or
                               '<strong>YYYY-MM-DD</strong>T<strong>HH:MM:SS</strong>Z' (utc time)
@@ -156,16 +171,22 @@
                   </form>
                 </div>
 
-                <p id="descr"></p>
+                <div class="results-wrap">
+                  <h5 id="descr"></h5>
 
-                <p>Parameter for this view: (you can also copy the url)</p>
-                <pre id="queryx"></pre>
+                  <p class="note">Parameter for this view: (you can also copy the url)</p>
+                  <pre id="queryx"></pre>
 
-                <p id="descr"></p>
-                <div class="col-sm-12" id="map" style="width:100%; height:500px; "></div>
-                <br/>
+                  <p id="descr"></p>
 
-                <div id="contents"></div>
+                  <div class="row">
+                    <div class="col-sm-12">
+                      <div id="map" style="width:100%; height:500px; "></div>
+                    </div>
+                  </div>
+
+                  <div id="contents" class="result-content"></div>
+                </div>
               </div>
             </div>
           </div>

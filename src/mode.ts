@@ -334,9 +334,13 @@ class TableWriter<T> {
     public addDownloadIcon(): void {
         var parent = this._root.get(0);
 
-        let button = document.createElement("input");
-        button.type = "image";
-        button.src = "https://trcanvasdata.blob.core.windows.net/publicimages/export-csv.png";
+        let downloadLabel = document.createElement('p');
+        downloadLabel.className = "download-label";
+        downloadLabel.textContent = "Download CSV file:";
+
+        let button = document.createElement("i");
+        button.className = "inline-icon";
+        // button.src = "https://trcanvasdata.blob.core.windows.net/publicimages/export-csv.png";
         button.addEventListener("click", (e) => {
             var content: string = this._csvContent;
 
@@ -354,6 +358,7 @@ class TableWriter<T> {
             }
         });
         parent.insertBefore(button, parent.firstChild);
+        parent.insertBefore(downloadLabel, parent.firstChild);
     }
 
     private csvAddNewLine() {
