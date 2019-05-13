@@ -316,6 +316,7 @@ function escCsv(x: string): string {
 class TableWriter<T> {
     private _root: JQuery<HTMLElement>;
     private _table: JQuery<HTMLElement>;
+    private _wrapper: JQuery<HTMLElement>;
     private _count: number;
     private _columns: string[];
     private _ctx: RenderContext;
@@ -377,8 +378,11 @@ class TableWriter<T> {
         if (this._count == 0) {
             // Writer header
 
+            this._wrapper = $("<div class='table-wrapper'>");
             this._table = $("<table>").attr("class", "table table-striped");
-            this._root.append(this._table);
+
+            this._wrapper.append(this._table);
+            this._root.append(this._wrapper);
 
             var tr = $("<tr>");
 

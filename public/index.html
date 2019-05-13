@@ -4,6 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <title>Basic TRC plugin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
     <link rel="stylesheet" type="text/css" href="trcgrid.css">
     <link rel="stylesheet" type="text/css" href="daterangepicker.css">
@@ -60,10 +61,13 @@
         }
 
         $(function() {
-          $('input[id="f_utcstart"]').daterangepicker({
+          $('.datepicker-trigger').daterangepicker({
+            singleDatePicker: true,
             timePicker: true,
+            showDropdowns: true,
+            minYear: 1901,
             startDate: moment().startOf('hour'),
-            endDate: moment().startOf('hour').add(32, 'hour'),
+            maxYear: parseInt(moment().format('YYYY'),10),
             locale: {
               format: 'MM/DD/YYYY hh:mm A'
             }
@@ -149,10 +153,10 @@
                       <li class="range-wrap form-group">
                         <div id="group_UtcRange">
                           <label class="col-sm-2 control-label" for="f_utcstart">Time range:</label>
-                          <div class="col-sm-6">
-                            <input id="f_utcstart" class="form-control" />
-                            <!-- <span class="form-separator">to</span> -->
-                            <!-- <input id="f_utcend" class="form-control half-size" /> -->
+                          <div class="col-sm-8">
+                            <input id="f_utcstart" class="form-control half-size datepicker-trigger" />
+                            <span class="form-separator">to</span>
+                            <input id="f_utcend" class="form-control half-size datepicker-trigger" />
                             <p class="note">Time is in format:
                               '<strong>MM/DD/YYYY</strong>,<strong>HH:MM:SS AM</strong>' (local time)  or
                               '<strong>YYYY-MM-DD</strong>T<strong>HH:MM:SS</strong>Z' (utc time)
