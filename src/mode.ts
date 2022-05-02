@@ -338,10 +338,10 @@ class TableWriter<T> {
         let downloadLabel = document.createElement('p');
         downloadLabel.className = "download-label";
         downloadLabel.textContent = "Download CSV file:";
-
-        let button = document.createElement("i");
-        button.className = "inline-icon";
-        // button.src = "https://trcanvasdata.blob.core.windows.net/publicimages/export-csv.png";
+        
+        let button = document.createElement("button");
+        button.innerHTML = "[Download CSV]";
+        //button.src = "https://trcanvasdata.blob.core.windows.net/publicimages/export-csv.png";
         button.addEventListener("click", (e) => {
             var content: string = this._csvContent;
 
@@ -350,7 +350,7 @@ class TableWriter<T> {
                 window.navigator.msSaveBlob(new Blob([content], { type: "text/csv;charset=utf-8;" }), "data.csv");
             } else {
                 console.debug("using download attr");
-                let uri = encodeURI("data:text/csv;charset=utf-8," + content);
+                let uri = "data:text/csv;charset=utf-8," + encodeURIComponent(content);
                 var link = document.createElement("a");
                 link.setAttribute("href", uri);
                 link.setAttribute("download", "data.csv");
