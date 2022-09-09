@@ -120,6 +120,7 @@ export class ModeDescr {
         new ModeDescr("delta", "Show single raw delta"),
         new ModeDescr("deltarange", "Show range of raw deltas"),
         new ModeDescr("byrecid", "Show deltas grouped by RecId"),
+        new ModeDescr("doors", "Show doors per user"),
     ];
 
     public static lookup(name: string): ModeDescr {
@@ -194,6 +195,11 @@ export abstract class Mode {
         if (kind == "daily") {
             return new ShowDailyReport(normFilter);
         }
+
+        if (kind == "doors") {
+            return new ShowDoors(normFilter);
+        }
+
         throw ("Unidentified mode: " + kind);
 
     }
@@ -754,6 +760,86 @@ class DailyX {
     // Return value in minutes
     public toString(): string {
         return this.getMinutes().toString();
+    }
+}
+
+
+class DoorStatRow {
+    public User: string;
+    public TotalHouseholds: number;
+    public TotalAnswers: number;
+}
+
+export class ShowDoors extends Mode {
+    private _clf: analyze.NormChangeListFilter; // already has filter applied!
+
+    public constructor(filter: analyze.NormChangeListFilter) {
+        super();
+        this._clf = filter;
+    }
+
+    public getDescription(): string {
+        return "This shows Doors per user for the given time range";
+    }
+
+    public toHash(): string {
+        return "show=doors;" + this._clf.toString();
+    }
+    public render(ctx : RenderContext): void {
+
+        var cl = ctx.normChangelist;
+        cl = cl.applyFilter(this._clf);
+
+        var tw = new TableWriter<DoorStatRow>(ctx.element, ctx);
+
+        var totalUsers: number = 0;
+
+        var userCls: bcl.Dict<analyze.NormChangeList> = cl.filterByUser();
+
+        // How many answered by this user?
+
+        var userAnswers = new bcl.Dict<number>(); // User --> # of answers
+
+        cl.forEach(item => {
+            var user = item.getUser();
+            item.forEach((columnName, newValue) => {
+                // 
+                if (columnName == "ResultOfContact") {
+                    //if (newValue == "Talked with voter")
+                    if (newValue.startsWith("Answer"))
+                    {
+                        var c = userAnswers.get(user);
+                        if (!c) {
+                            c = 0;
+                        }
+                        c++;
+                        userAnswers.add(user, c);
+                    }
+                }
+            });
+        });
+
+
+        userCls.forEach((user, cl2) => {
+            totalUsers++;
+
+            var clusters = cl2.getClustering();
+            var totalHouseholds = 0;
+            clusters.forEach(cluster => {
+                totalHouseholds += cluster.getUniqueHouseholdCount(ctx.householder);
+            });
+
+             var c = userAnswers.get(user);
+             if (!c) { c = 0; }
+
+            tw.writeRow({ 
+                User: user, 
+                TotalHouseholds : totalHouseholds,
+                TotalAnswers : c
+             });
+        });
+
+        tw.addDownloadIcon();
     }
 }
 
